@@ -1,0 +1,10 @@
+{
+    "name": "esxi-lab-provider dev",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "ghcr.io/devcontainers/features/go:1": {},
+        "ghcr.io/devcontainers/features/node:1": {},
+        "ghcr.io/devcontainers-extra/features/ansible:2": {},
+        "ghcr.io/robbert229/devcontainer-features/opentofu:1": {}
+    }
+}
