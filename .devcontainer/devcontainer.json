@@ -8,24 +8,28 @@
         "ghcr.io/robbert229/devcontainer-features/opentofu:1": {},
         "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
-        "ghcr.io/devcontainers-extra/features/pre-commit:2": {}
+        "ghcr.io/devcontainers-extra/features/pre-commit:2": {},
+        "ghcr.io/devcontainers-extra/features/go-task:1": {}
+    },
+    "containerEnv": {
+        "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
     },
     "mounts": [
-        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
-        "source=${localEnv:USERPROFILE}/.local/share/tunnel.conf,target=/etc/wireguard/wg0.conf,type=bind,readonly"
+        "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
     ],
     "runArgs": [
         "--memory=8g",
         "--cpus=4",
         "--cap-add=NET_ADMIN",
-        "--cap-add=SYS_MODULE",
-        "--sysctl=net.ipv4.conf.all.src_valid_mark=1"
+        "--cap-add=SYS_MODULE"
     ],
     "postStartCommand": "sudo apt-get update && sudo apt-get install -y wireguard-tools",
     "customizations": {
         "vscode": {
             "extensions": [
-                "opentofu.vscode-opentofu"
+                "opentofu.vscode-opentofu",
+                "redhat.ansible",
+                "task.vscode-task"
             ]
         }
     }
