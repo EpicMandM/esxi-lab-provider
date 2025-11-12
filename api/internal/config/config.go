@@ -15,16 +15,17 @@ type Config struct {
 	VCenterInsecure bool
 }
 
-// Load loads configuration from environment variables only (no .env file)
+// Load loads configuration from environment variables only.
 func Load() (*Config, error) {
 	return LoadWithFile("")
 }
 
-// LoadWithFile loads configuration from environment variables and optional .env file
+// LoadWithFile loads configuration from an optional .env file and environment variables.
 func LoadWithFile(envFile string) (*Config, error) {
+	// Attempt to load .env file if provided, but don't fail if it doesn't exist.
 	if envFile != "" {
-		if err := godotenv.Load(envFile); err != nil {
-			return nil, fmt.Errorf("failed to load env file: %w", err)
+		if err := godotenv.Load(envFile); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("error loading .env file: %w", err)
 		}
 	}
 
@@ -42,6 +43,7 @@ func LoadWithFile(envFile string) (*Config, error) {
 	return cfg, nil
 }
 
+// Validate checks if all required fields are set.
 func (c *Config) Validate() error {
 	if c.VCenterURL == "" {
 		return fmt.Errorf("VCENTER_URL is required")
@@ -55,10 +57,8 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// parseInsecure converts a string to a boolean, defaulting to false.
 func parseInsecure(s string) bool {
-	b, err := strconv.ParseBool(s)
-	if err != nil {
-		return false
-	}
+	b, _ := strconv.ParseBool(s)
 	return b
 }
