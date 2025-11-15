@@ -11,7 +11,6 @@ type Store interface {
 	// VM related methods
 	GetVMByName(name string) (*models.VM, error)
 	SaveVM(vm *models.VM) error
-	UpdateVMStatus(name string, status string) error
 	ListVMs() ([]*models.VM, error)
 
 	// Booking related methods

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/EpicMandM/esxi-lab-provider/api/internal/config"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/models"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -21,18 +22,18 @@ type VMwareService struct {
 	logger *log.Logger
 }
 
-func NewVMwareService(ctx context.Context, vcenterURL, username, password string, insecure bool, logger *log.Logger) (*VMwareService, error) {
+func NewVMwareService(ctx context.Context, cfg *config.Config, logger *log.Logger) (*VMwareService, error) {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
-	u, err := soap.ParseURL(vcenterURL)
+	u, err := soap.ParseURL(cfg.VCenterURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	u.User = url.UserPassword(username, password)
+	u.User = url.UserPassword(cfg.VCenterUsername, cfg.VCenterPassword)
 
-	client, err := govmomi.NewClient(ctx, u, insecure)
+	client, err := govmomi.NewClient(ctx, u, cfg.VCenterInsecure)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
@@ -62,6 +63,23 @@ func (s *VMwareService) Close(ctx context.Context) error {
 	return nil
 }
 
+func (s *VMwareService) ListAllVMs(ctx context.Context) ([]*models.VM, error) {
+	if s == nil {
+		return nil, fmt.Errorf("service not initialized")
+	}
+	finder := s.GetFinder()
+	vms, err := finder.VirtualMachineList(ctx, "*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to list virtual machines: %w", err)
+	}
+	var vmList []*models.VM
+	for _, vm := range vms {
+		vmList = append(vmList, &models.VM{
+			Name: vm.Name(),
+		})
+	}
+	return vmList, nil
+}
 func (s *VMwareService) ListVMSnapshots(ctx context.Context) (*models.VMListResponse, error) {
 	if s == nil {
 		return nil, fmt.Errorf("service not initialized")

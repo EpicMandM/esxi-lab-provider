@@ -2,44 +2,84 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/config"
+	"github.com/EpicMandM/esxi-lab-provider/api/internal/handler"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/service"
+	"github.com/EpicMandM/esxi-lab-provider/api/internal/store"
 )
 
 func main() {
-	// Load configuration
-	cfg, err := config.LoadWithFile("../../../.env")
+	// 1. Load Config
+	envPath := findEnvFile()
+	cfg, err := config.LoadWithFile(envPath)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-
-	ctx := context.Background()
-	// Create application
 	logger := log.New(os.Stdout, "[API] ", log.LstdFlags)
-	vm, err := service.NewVMwareService(ctx, cfg.VCenterURL, cfg.VCenterUsername, cfg.VCenterPassword, cfg.VCenterInsecure, logger)
+
+	// 2. Initialize Database (Store)
+	dbStore, err := store.NewSQLiteStore("./data")
 	if err != nil {
-		log.Fatalf("Failed to create VMware service: %v", err)
+		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer func() {
-		if err := vm.Close(ctx); err != nil {
-			log.Printf("Error closing VMware service: %v", err)
+		if err := dbStore.Close(); err != nil {
+			logger.Printf("Failed to close database: %v", err)
 		}
 	}()
 
-	// Get VM snapshots data
-	data, err := vm.ListVMSnapshots(ctx)
+	ctx := context.Background()
+	// 3. Initialize VMware Service
+	vmwareService, err := service.NewVMwareService(ctx, cfg, logger)
 	if err != nil {
-		log.Fatalf("Failed to list VM snapshots: %v", err)
+		log.Fatalf("Failed to initialize VMware service: %v", err)
 	}
-	jsonData, err := json.MarshalIndent(data.VMs, "", "  ")
+	defer func() {
+		if err := vmwareService.Close(ctx); err != nil {
+			logger.Printf("Failed to close VMware service: %v", err)
+		}
+	}()
+	// 4. Initialize Business Logic Service (e.g., BookingService)
+	// This service gets the interfaces it needs to do its job.
+	bookingService := service.NewBookingService(ctx, logger, dbStore, vmwareService)
+
+	// 5. Initialize API Handler
+	// The handler only knows about the booking service, not the DB or VMware.
+	apiHandler := handler.NewAPIHandler(bookingService)
+
+	// 6. Setup Router and Start Server
+	router := http.NewServeMux()
+	router.HandleFunc("/vms", apiHandler.ListVMs)
+	router.HandleFunc("/book", apiHandler.BookVM)
+	// ... other routes
+
+	logger.Println("Starting server on :8080")
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+func findEnvFile() string {
+	wd, err := os.Getwd()
 	if err != nil {
-		log.Fatalf("Failed to marshal VM snapshots data: %v", err)
+		return ".env"
 	}
-	fmt.Printf("%s\n", data.VCenterName)
-	fmt.Printf("%s\n", jsonData)
+	dir := wd
+	for {
+		candidate := filepath.Join(dir, ".env")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return ".env"
 }
