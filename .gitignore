@@ -244,6 +244,7 @@ crash.*.log
 # the environment.
 *.tfvars
 *.tfvars.json
+infra/opentofu/chat.auto.tfvars.json
 
 # Ignore override files as they are usually used to override resources locally and so
 # are not checked in
@@ -310,3 +311,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+web
+chat-app/.clasp.json
