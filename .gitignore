@@ -18,6 +18,15 @@
 # Go workspace file
 go.work
 
+# Project-specific files
+# Service account credentials
+service-account.json
+**/service-account.json
+*.json.key
+# Task files
+.task
+
+
 # npm
 # Logs
 logs
@@ -244,6 +253,7 @@ crash.*.log
 # the environment.
 *.tfvars
 *.tfvars.json
+infra/opentofu/chat.auto.tfvars.json
 
 # Ignore override files as they are usually used to override resources locally and so
 # are not checked in
@@ -310,3 +320,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+web
+chat-app/.clasp.json

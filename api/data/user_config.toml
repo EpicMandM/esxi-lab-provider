@@ -1,0 +1,25 @@
+# Feature Configuration
+# Non-sensitive settings that customize application behavior and integrations.
+# Modify these to adjust feature behavior without redeployment.
+
+[calendar]
+# Google Calendar ID (e.g., "primary" or "your-calendar@group.calendar.google.com")
+calendar_id = "c_c013620c0bccde816a0f74cdc7304179ed5b804b670ca28a7fe5b10cf3d69b48@group.calendar.google.com"
+
+# Path to Google service account JSON file
+service_account_path = "/opt/esxi-lab/service-account.json"
+
+[vsphere]
+# VMs available for lab sessions (up to 3 concurrent)
+vms = [
+    "lab-vm-01",
+    "lab-vm-02",
+    "lab-vm-03"
+]
+users = [
+    "lab-user1",
+    "lab-user2",
+    "lab-user3"
+]
+# Snapshot name to restore to (optional: if not set, uses latest snapshot)
+# snapshot_name = "main-snapshot-with-text"

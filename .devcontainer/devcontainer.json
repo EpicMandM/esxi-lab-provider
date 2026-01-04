@@ -3,8 +3,26 @@
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "features": {
         "ghcr.io/devcontainers/features/go:1": {},
-        "ghcr.io/devcontainers/features/node:1": {},
         "ghcr.io/devcontainers-extra/features/ansible:2": {},
-        "ghcr.io/robbert229/devcontainer-features/opentofu:1": {}
+        "ghcr.io/robbert229/devcontainer-features/opentofu:1": {},
+        "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
+        "ghcr.io/devcontainers-extra/features/pre-commit:2": {},
+        "ghcr.io/devcontainers-extra/features/go-task:1": {}
+    },
+    "runArgs": [
+        "--memory=8g",
+        "--cpus=4",
+        "--cap-add=NET_ADMIN",
+        "--cap-add=SYS_MODULE"
+    ],
+    "postStartCommand": "sudo apt-get update && sudo apt-get install -y wireguard-tools",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "opentofu.vscode-opentofu",
+                "redhat.ansible",
+                "task.vscode-task"
+            ]
+        }
     }
 }
