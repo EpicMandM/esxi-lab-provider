@@ -18,6 +18,15 @@
 # Go workspace file
 go.work
 
+# Project-specific files
+# Service account credentials
+service-account.json
+**/service-account.json
+*.json.key
+# Task files
+.task
+
+
 # npm
 # Logs
 logs
