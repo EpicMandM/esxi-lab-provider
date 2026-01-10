@@ -19,10 +19,17 @@ resource "google_project_service" "calendar_api" {
   disable_on_destroy = false
 }
 
-# Create a Service Account for the application
+# Enable the Gmail API
+resource "google_project_service" "gmail_api" {
+  service            = "gmail.googleapis.com"
+  disable_on_destroy = false
+}
+
+# Create a Service Account for the application (Calendar + Gmail)
 resource "google_service_account" "calendar_sa" {
   account_id   = "calendar-service-account"
-  display_name = "Calendar Service Account"
+  display_name = "Calendar and Gmail Service Account"
+  description  = "Service account for accessing Google Calendar and Gmail APIs"
 }
 
 # Create a key for the Service Account

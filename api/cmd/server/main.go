@@ -18,6 +18,7 @@ type App struct {
 	featureCfg  *service.FeatureConfig
 	calendarSvc *service.CalendarService
 	vmwareSvc   *service.VMwareService
+	emailSvc    *service.EmailService
 }
 
 func main() {
@@ -63,7 +64,7 @@ func (a *App) run() error {
 		os.Exit(1)
 	}
 
-	return a.restoreVMs(vmsToRestore, len(activeEvents))
+	return a.restoreVMs(vmsToRestore, activeEvents)
 }
 
 func (a *App) initialize() error {
@@ -96,6 +97,32 @@ func (a *App) initialize() error {
 	}
 	a.vmwareSvc = vmwareSvc
 
+	// Initialize Email service if configured
+	smtpHost := getEnvOrDefault("SMTP_HOST", "smtp.gmail.com")
+	smtpPort := getEnvOrDefault("SMTP_PORT", "587")
+	smtpUsername := os.Getenv("SMTP_USERNAME")
+	smtpPassword := os.Getenv("SMTP_PASSWORD")
+	smtpFrom := getEnvOrDefault("SMTP_FROM", smtpUsername)
+	testEmailOnly := os.Getenv("TEST_EMAIL_ONLY")
+
+	if smtpUsername != "" && smtpPassword != "" {
+		emailSvc, err := service.NewEmailService(smtpHost, smtpPort, smtpUsername, smtpPassword, smtpFrom, testEmailOnly)
+		if err != nil {
+			a.logger.Warn("Email service not available, emails will not be sent", logger.Error(err))
+			a.emailSvc = nil
+		} else {
+			a.emailSvc = emailSvc
+			if testEmailOnly != "" {
+				a.logger.Info("Email service initialized (TEST MODE)", logger.Status("ready"), logger.F("TEST_EMAIL", testEmailOnly))
+			} else {
+				a.logger.Info("Email service initialized", logger.Status("ready"))
+			}
+		}
+	} else {
+		a.logger.Info("Email service not configured (SMTP_USERNAME/SMTP_PASSWORD missing)")
+		a.emailSvc = nil
+	}
+
 	return nil
 }
 
@@ -126,7 +153,13 @@ func (a *App) logVMInventory(vms []models.VM) {
 	}
 }
 
-func (a *App) fetchActiveEvents() ([]string, error) {
+// EventInfo stores information about an active event including participant email
+type EventInfo struct {
+	Summary string
+	Email   string
+}
+
+func (a *App) fetchActiveEvents() ([]EventInfo, error) {
 	now := time.Now()
 	timeMin := now.Add(-6 * time.Minute).Format(time.RFC3339)
 	timeMax := now.Add(6 * time.Minute).Format(time.RFC3339)
@@ -143,8 +176,8 @@ func (a *App) fetchActiveEvents() ([]string, error) {
 	return activeEvents, nil
 }
 
-func (a *App) filterActiveEvents(events []*calendar.Event, now time.Time) []string {
-	var activeEvents []string
+func (a *App) filterActiveEvents(events []*calendar.Event, now time.Time) []EventInfo {
+	var activeEvents []EventInfo
 
 	for _, event := range events {
 		if event.Start.DateTime == "" || event.End.DateTime == "" {
@@ -162,9 +195,31 @@ func (a *App) filterActiveEvents(events []*calendar.Event, now time.Time) []stri
 		}
 
 		if (startTime.Before(now) || startTime.Equal(now)) && endTime.After(now) {
-			activeEvents = append(activeEvents, event.Summary)
+			// Extract participant email - try to find first attendee or parse from summary
+			email := ""
+			if len(event.Attendees) > 0 {
+				// Get first attendee's email
+				for _, attendee := range event.Attendees {
+					if attendee.Email != "" && !attendee.Organizer {
+						email = attendee.Email
+						break
+					}
+				}
+			}
+
+			// If no attendee found, try to extract email from summary (format: "Name (email@domain.com)")
+			if email == "" && event.Summary != "" {
+				email = extractEmailFromSummary(event.Summary)
+			}
+
+			activeEvents = append(activeEvents, EventInfo{
+				Summary: event.Summary,
+				Email:   email,
+			})
+
 			a.logger.Info("Active event found",
 				logger.F("EVENT", event.Summary),
+				logger.F("EMAIL", email),
 				logger.F("START", startTime.Format(time.RFC3339)),
 				logger.F("END", endTime.Format(time.RFC3339)))
 		}
@@ -228,7 +283,8 @@ func (a *App) addFallbackVMs(existing []string, inventory []models.VM, eventCoun
 	return vmsToRestore
 }
 
-func (a *App) restoreVMs(vmsToRestore []string, eventCount int) error {
+func (a *App) restoreVMs(vmsToRestore []string, activeEvents []EventInfo) error {
+	eventCount := len(activeEvents)
 	snapshotName := "<latest>"
 	if a.featureCfg.VSphere.SnapshotName != nil {
 		snapshotName = *a.featureCfg.VSphere.SnapshotName
@@ -246,8 +302,33 @@ func (a *App) restoreVMs(vmsToRestore []string, eventCount int) error {
 
 	if len(passwords) > 0 {
 		a.logger.Info("Password rotation completed", logger.Action("password_rotation"), logger.Status("completed"))
-		for username, password := range passwords {
-			a.logger.Info("User password rotated", logger.User(username), logger.Password(password))
+
+		// Send emails with passwords if email service is available
+		for i, username := range usersToRotate {
+			if password, ok := passwords[username]; ok {
+				a.logger.Info("User password rotated", logger.User(username), logger.Password(password))
+
+				// Try to send email if we have the email service and event email
+				if a.emailSvc != nil && i < len(activeEvents) && activeEvents[i].Email != "" {
+					vmName := ""
+					if i < len(vmsToRestore) {
+						vmName = vmsToRestore[i]
+					}
+
+					err := a.emailSvc.SendPasswordEmail(activeEvents[i].Email, vmName, username, password)
+					if err != nil {
+						a.logger.Error("Failed to send password email",
+							logger.F("EMAIL", activeEvents[i].Email),
+							logger.User(username),
+							logger.Error(err))
+					} else {
+						a.logger.Info("Password email sent",
+							logger.F("EMAIL", activeEvents[i].Email),
+							logger.User(username),
+							logger.VM(vmName))
+					}
+				}
+			}
 		}
 	}
 
@@ -286,6 +367,27 @@ func buildInventoryMap(vms []models.VM) map[string]bool {
 		inventoryVMs[vm.Name] = true
 	}
 	return inventoryVMs
+}
+
+// extractEmailFromSummary extracts email from format "Name (email@domain.com)"
+func extractEmailFromSummary(summary string) string {
+	start := -1
+	end := -1
+
+	for i, char := range summary {
+		if char == '(' {
+			start = i + 1
+		} else if char == ')' && start > 0 {
+			end = i
+			break
+		}
+	}
+
+	if start > 0 && end > start {
+		return summary[start:end]
+	}
+
+	return ""
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

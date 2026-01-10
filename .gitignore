@@ -25,6 +25,10 @@ service-account.json
 *.json.key
 # Task files
 .task
+# Local data directory
+data/
+# Docker volumes
+*.db
 
 
 # npm
@@ -242,6 +246,8 @@ pids
 # .tfstate files
 *.tfstate
 *.tfstate.*
+
+.terraform.lock.hcl
 
 # Crash log files
 crash.log

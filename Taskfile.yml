@@ -7,6 +7,70 @@ vars:
   SERVICE_NAME: esxi-lab-scheduler
 
 tasks:
+  default:
+    desc: Deploy locally with docker-compose (default)
+    cmds:
+      - task: dev-up
+
+  dev-build:
+    desc: Build Docker image for local deployment
+    cmds:
+      - docker-compose build scheduler
+
+  dev-up:
+    desc: Start scheduler with docker-compose
+    deps: [dev-build]
+    cmds:
+      - mkdir -p data
+      - docker-compose up -d
+      - echo "✓ Scheduler deployed locally with docker-compose"
+      - echo "View logs:task dev-logs"
+      - echo "Check status:task dev-status"
+
+  dev-down:
+    desc: Stop and remove all containers
+    cmds:
+      - docker-compose down
+      - echo "✓ Scheduler stopped"
+
+  dev-restart:
+    desc: Restart the scheduler
+    cmds:
+      - docker-compose restart scheduler
+      - echo "✓ Scheduler restarted"
+
+  dev-logs:
+    desc: View scheduler logs
+    cmds:
+      - docker-compose logs -f scheduler
+
+  dev-logs-cron:
+    desc: View cron logs
+    cmds:
+      - docker-compose logs -f cron
+
+  dev-status:
+    desc: Check container status
+    cmds:
+      - docker-compose ps
+
+  dev-clean:
+    desc: Stop containers and remove volumes
+    cmds:
+      - docker-compose down -v
+      - rm -rf data
+      - echo "✓ Local deployment cleaned"
+
+  dev-exec:
+    desc: Execute scheduler once manually
+    cmds:
+      - docker-compose exec scheduler /app/scheduler
+
+  dev-shell:
+    desc: Open shell in scheduler container (debug)
+    cmds:
+      - docker-compose exec scheduler sh
+
   ssh-keygen:
     desc: Generate SSH key and upload to remote server for passwordless access
     vars:
