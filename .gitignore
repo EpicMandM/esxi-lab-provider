@@ -19,10 +19,14 @@
 go.work
 
 # Project-specific files
+# Environment with secrets
+.env
 # Service account credentials
 service-account.json
 **/service-account.json
 *.json.key
+# Secrets directory
+.secrets/
 # Task files
 .task
 # Local data directory

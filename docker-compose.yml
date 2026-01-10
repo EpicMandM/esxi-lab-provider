@@ -8,11 +8,9 @@ services:
     network_mode: host
     env_file:
       - .env
-    environment:
-      - CONFIG_PATH=/app/config/user_config.toml
     volumes:
-      - ./data:/app/data
-      - ./infra/terraform:/app/infra/terraform:ro
+      - ${HOST_PROJECT_PATH:-/home/vlad/Documents/esxi-lab-provider}/infra/terraform/service-account.json:/app/config/service-account.json:ro
+    restart: unless-stopped
 
   cron:
     image: alpine:latest

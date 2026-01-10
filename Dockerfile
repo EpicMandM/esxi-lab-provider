@@ -32,8 +32,11 @@ COPY --from=builder --chown=nonroot:nonroot /app-dirs/config /app/config
 COPY --from=builder --chown=nonroot:nonroot /app-dirs/data /app/data
 
 # Copy config files
-COPY --chown=nonroot:nonroot api/data/user_config.toml /app/config/user_config.toml
-COPY --chown=nonroot:nonroot infra/terraform/service-account.json /app/config/service-account.json
+COPY --chown=nonroot:nonroot api/data/user_config.toml /app/data/user_config.toml
+
+# NOTE: Secrets should be mounted at runtime:
+# - Service account: mount to /app/config/service-account.json
+# - SMTP password: set via SMTP_PASSWORD environment variable
 
 USER nonroot:nonroot
 

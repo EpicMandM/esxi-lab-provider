@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/config"
@@ -101,7 +102,19 @@ func (a *App) initialize() error {
 	smtpHost := getEnvOrDefault("SMTP_HOST", "smtp.gmail.com")
 	smtpPort := getEnvOrDefault("SMTP_PORT", "587")
 	smtpUsername := os.Getenv("SMTP_USERNAME")
+
+	// Read SMTP password from file if SMTP_PASSWORD_FILE is set (Docker secrets)
 	smtpPassword := os.Getenv("SMTP_PASSWORD")
+	if smtpPasswordFile := os.Getenv("SMTP_PASSWORD_FILE"); smtpPasswordFile != "" {
+		passwordBytes, err := os.ReadFile(smtpPasswordFile)
+		if err != nil {
+			a.logger.Warn("Failed to read SMTP password file", logger.Error(err), logger.F("file", smtpPasswordFile))
+		} else {
+			smtpPassword = strings.TrimSpace(string(passwordBytes))
+			a.logger.Info("SMTP password loaded from file", logger.F("file", smtpPasswordFile))
+		}
+	}
+
 	smtpFrom := getEnvOrDefault("SMTP_FROM", smtpUsername)
 	testEmailOnly := os.Getenv("TEST_EMAIL_ONLY")
 
