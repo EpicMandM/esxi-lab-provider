@@ -10,7 +10,7 @@ services:
       - .env
     volumes:
       - ${HOST_PROJECT_PATH:-/home/vlad/Documents/esxi-lab-provider}/infra/terraform/service-account.json:/app/config/service-account.json:ro
-    restart: unless-stopped
+    restart: "no"
 
   cron:
     image: alpine:latest
