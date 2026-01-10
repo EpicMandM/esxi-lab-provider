@@ -23,7 +23,7 @@
         "--cap-add=NET_ADMIN",
         "--cap-add=SYS_MODULE"
     ],
-    "postStartCommand": "sudo apt-get update && sudo apt-get install -y wireguard-tools && sudo chmod 666 /var/run/docker.sock",
+    "postStartCommand": "sudo apt-get update && sudo apt-get install -y wireguard-tools && sudo chmod 666 /var/run/docker.sock && curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash && tflint --init && pre-commit install && pre-commit install --hook-type commit-msg",
     "customizations": {
         "vscode": {
             "extensions": [
