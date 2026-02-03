@@ -17,12 +17,9 @@
         "--cap-add=SYS_MODULE"
     ],
     "postStartCommand": [
-        "sudo apt-get update",
-        "sudo apt-get install -y wireguard-tools",
-        "curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash",
-        "tflint --init",
-        "pre-commit install",
-        "pre-commit install --hook-type commit-msg"
+        "bash",
+        "-lc",
+        "sudo apt-get update && sudo apt-get install -y wireguard-tools curl && curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash && tflint --init && pre-commit install && pre-commit install --hook-type commit-msg"
     ],
     "customizations": {
         "vscode": {

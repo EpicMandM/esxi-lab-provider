@@ -23,3 +23,39 @@ users = [
 ]
 # Snapshot name to restore to (optional: if not set, uses latest snapshot)
 # snapshot_name = "main-snapshot-with-text"
+
+[wireguard]
+# Enable WireGuard tunnel configuration generation
+enabled = true
+
+# WireGuard server public key (from OPNsense server)
+server_public_key = "1G9+Jw9kWf4BcrXJV65YnPOMt/15MOur/6Tq+F7p0wo="
+
+# WireGuard server endpoint (public IP and port)
+server_endpoint = "172.16.18.128:51820"
+
+# OPNsense API configuration for dynamic peer registration
+# API credentials should be set in .env file: OPNSENSE_API_KEY and OPNSENSE_API_SECRET
+opnsense_url = "http://172.16.18.128"
+opnsense_api_key = "${OPNSENSE_API_KEY}"
+opnsense_api_secret = "${OPNSENSE_API_SECRET}"
+auto_register_peers = true
+
+# WireGuard server's tunnel network
+server_tunnel_network = "10.10.10.0/24"
+
+# Additional networks accessible through the tunnel (e.g., internal lab network)
+allowed_ips = ["10.39.101.0/24", "10.10.10.0/24"]
+
+# MTU setting for WireGuard interface
+mtu = 1400
+
+# Client IP assignments (must match the index of VMs/users and Terraform deployment)
+client_addresses = [
+    "10.10.10.2/32",  # lab-user1 / lab-vm-01 / dev-client-1
+    "10.10.10.3/32",  # lab-user2 / lab-vm-02 / dev-client-2
+    "10.10.10.4/32",  # lab-user3 / lab-vm-03 / dev-client-3
+]
+
+# Persistent keepalive interval (seconds)
+keepalive = 25

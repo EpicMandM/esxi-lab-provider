@@ -18,8 +18,9 @@ type CalendarConfig struct {
 // and integrations. Users can modify these without redeployment.
 // Source: TOML configuration file
 type FeatureConfig struct {
-	Calendar CalendarConfig `toml:"calendar"`
-	VSphere  VSphereConfig  `toml:"vsphere"`
+	Calendar  CalendarConfig  `toml:"calendar"`
+	VSphere   VSphereConfig   `toml:"vsphere"`
+	WireGuard WireGuardConfig `toml:"wireguard"`
 }
 
 type VSphereConfig struct {

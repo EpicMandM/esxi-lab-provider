@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -14,12 +15,13 @@ import (
 )
 
 type App struct {
-	ctx         context.Context
-	logger      *logger.Logger
-	featureCfg  *service.FeatureConfig
-	calendarSvc *service.CalendarService
-	vmwareSvc   *service.VMwareService
-	emailSvc    *service.EmailService
+	ctx          context.Context
+	logger       *logger.Logger
+	featureCfg   *service.FeatureConfig
+	calendarSvc  *service.CalendarService
+	vmwareSvc    *service.VMwareService
+	emailSvc     *service.EmailService
+	wireguardSvc *service.WireGuardService
 }
 
 func main() {
@@ -134,6 +136,21 @@ func (a *App) initialize() error {
 	} else {
 		a.logger.Info("Email service not configured (SMTP_USERNAME/SMTP_PASSWORD missing)")
 		a.emailSvc = nil
+	}
+
+	// Initialize WireGuard service if configured
+	if featureCfg.WireGuard.Enabled {
+		wireguardSvc := service.NewWireGuardService(&featureCfg.WireGuard)
+		if err := wireguardSvc.ValidateConfig(); err != nil {
+			a.logger.Warn("WireGuard service configuration invalid", logger.Error(err))
+			a.wireguardSvc = nil
+		} else {
+			a.wireguardSvc = wireguardSvc
+			a.logger.Info("WireGuard service initialized", logger.Status("ready"))
+		}
+	} else {
+		a.logger.Info("WireGuard service not enabled in configuration")
+		a.wireguardSvc = nil
 	}
 
 	return nil
@@ -316,6 +333,37 @@ func (a *App) restoreVMs(vmsToRestore []string, activeEvents []EventInfo) error 
 	if len(passwords) > 0 {
 		a.logger.Info("Password rotation completed", logger.Action("password_rotation"), logger.Status("completed"))
 
+		// Generate WireGuard configs if service is available
+		wireguardConfigs := make(map[string]string)
+		if a.wireguardSvc != nil {
+			for i, username := range usersToRotate {
+				// Rotate WireGuard key along with password
+				_, pubKey, err := a.wireguardSvc.RotateUserKey(username)
+				if err != nil {
+					a.logger.Error("Failed to rotate WireGuard key", logger.User(username), logger.Error(err))
+					continue
+				}
+
+				// Register peer with OPNsense if auto-registration is enabled
+				if err := a.wireguardSvc.RegisterPeerWithOPNsense(username, pubKey, i); err != nil {
+					a.logger.Error("Failed to register peer with OPNsense", logger.User(username), logger.Error(err))
+					// Continue anyway - user can manually register if needed
+				} else {
+					a.logger.Info("Peer registered with OPNsense", logger.User(username), logger.F("PUBLIC_KEY", pubKey))
+				}
+
+				// Generate config file
+				config, err := a.wireguardSvc.GenerateClientConfig(username, i)
+				if err != nil {
+					a.logger.Error("Failed to generate WireGuard config", logger.User(username), logger.Error(err))
+					continue
+				}
+
+				wireguardConfigs[username] = config
+				a.logger.Info("WireGuard config generated", logger.User(username), logger.F("PUBLIC_KEY", pubKey))
+			}
+		}
+
 		// Send emails with passwords if email service is available
 		for i, username := range usersToRotate {
 			if password, ok := passwords[username]; ok {
@@ -328,14 +376,28 @@ func (a *App) restoreVMs(vmsToRestore []string, activeEvents []EventInfo) error 
 						vmName = vmsToRestore[i]
 					}
 
-					err := a.emailSvc.SendPasswordEmail(activeEvents[i].Email, vmName, username, password)
+					// Prepare WireGuard attachment if available
+					var attachment *service.EmailAttachment
+					if wgConfig, ok := wireguardConfigs[username]; ok {
+						attachment = &service.EmailAttachment{
+							Filename: fmt.Sprintf("%s-wireguard.conf", username),
+							Content:  []byte(wgConfig),
+							MimeType: "application/x-wireguard-profile",
+						}
+					}
+
+					err := a.emailSvc.SendPasswordEmailWithAttachment(activeEvents[i].Email, vmName, username, password, attachment)
 					if err != nil {
 						a.logger.Error("Failed to send password email",
 							logger.F("EMAIL", activeEvents[i].Email),
 							logger.User(username),
 							logger.Error(err))
 					} else {
-						a.logger.Info("Password email sent",
+						logMsg := "Password email sent"
+						if attachment != nil {
+							logMsg += " with WireGuard config"
+						}
+						a.logger.Info(logMsg,
 							logger.F("EMAIL", activeEvents[i].Email),
 							logger.User(username),
 							logger.VM(vmName))

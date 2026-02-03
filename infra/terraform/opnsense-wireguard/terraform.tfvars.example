@@ -1,0 +1,33 @@
+# OPNsense Connection Configuration
+opnsense_url          = "https://192.168.1.1"
+opnsense_api_key      = "your-api-key-here"
+opnsense_api_secret   = "your-api-secret-here"
+
+# WireGuard Server Configuration
+wireguard_port         = 51820
+wireguard_mtu          = -1  # -1 uses MTU from main interface
+wireguard_dns          = ["1.1.1.1", "8.8.8.8"]
+server_tunnel_address  = "10.10.10.1/24"
+server_public_key      = "server-public-key-here"
+server_private_key     = "server-private-key-here"
+
+# Peer 1 Configuration
+peer1_public_key      = "peer1-public-key-here"
+peer1_preshared_key   = ""  # Optional
+peer1_allowed_ips     = "10.10.10.2/32"
+peer1_server_address  = ""  # Optional: peer endpoint address
+peer1_server_port     = -1  # Optional: peer endpoint port
+
+# Peer 2 Configuration
+peer2_public_key      = "peer2-public-key-here"
+peer2_preshared_key   = ""  # Optional
+peer2_allowed_ips     = "10.10.10.3/32"
+peer2_server_address  = ""
+peer2_server_port     = -1
+
+# Peer 3 Configuration
+peer3_public_key      = "peer3-public-key-here"
+peer3_preshared_key   = ""  # Optional
+peer3_allowed_ips     = "10.10.10.4/32"
+peer3_server_address  = ""
+peer3_server_port     = -1

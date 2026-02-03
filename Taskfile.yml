@@ -44,6 +44,11 @@ tasks:
     cmds:
       - docker-compose logs -f scheduler
 
+  dev-logs-tail:
+    desc: View last 50 lines of scheduler logs
+    cmds:
+      - docker-compose logs --tail=50 scheduler
+
   dev-logs-cron:
     desc: View cron logs
     cmds:
@@ -64,7 +69,21 @@ tasks:
   dev-exec:
     desc: Execute scheduler once manually
     cmds:
-      - docker-compose exec scheduler /app/scheduler
+      - docker-compose run --rm scheduler /app/scheduler
+
+  dev-test:
+    desc: Build and test the scheduler locally
+    cmds:
+      - task: dev-build
+      - docker-compose run --rm scheduler /app/scheduler
+      - echo "✓ Test run completed. Check output above for errors."
+
+  dev-verify-config:
+    desc: Verify configuration loads correctly (fast check)
+    cmds:
+      - task: dev-build
+      - echo "Testing configuration loading..."
+      - docker-compose run --rm scheduler sh -c "cat /app/config/user_config.toml && echo '\n--- Config file loaded successfully ---'"
 
   dev-shell:
     desc: Open shell in scheduler container (debug)
