@@ -1,0 +1,11 @@
+# ESXi host connection
+esxi_url            = "https://172.17.17.2"
+esxi_admin_username = "root"
+esxi_admin_password = "your-esxi-root-password"
+
+# Number of lab users (default: 4)
+# Creates lab-user-1..4 with access to Pod-1..4_FortiGate
+# user_count = 4
+
+# Custom role name (default: lab-console)
+# role_name = "lab-console"
