@@ -64,15 +64,15 @@ resource "random_password" "user_passwords" {
 
 resource "null_resource" "esxi_role" {
   triggers = {
-    privileges     = join(",", local.role_privileges)
-    role_name      = var.role_name
-    esxi_url       = var.esxi_url
-    esxi_username  = var.esxi_admin_username
-    esxi_password  = var.esxi_admin_password
+    privileges    = join(",", local.role_privileges)
+    role_name     = var.role_name
+    esxi_url      = var.esxi_url
+    esxi_username = var.esxi_admin_username
+    esxi_password = var.esxi_admin_password
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    command     = <<-EOT
       # Remove role if it exists (ignore errors), then create with exact privileges
       govc role.remove "${var.role_name}" 2>/dev/null || true
       govc role.create "${var.role_name}" ${join(" ", local.role_privileges)}
@@ -110,7 +110,7 @@ resource "null_resource" "esxi_users" {
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    command     = <<-EOT
       # Remove user if exists, then create fresh
       govc host.account.remove -id "${each.key}" 2>/dev/null || true
       govc host.account.create \
@@ -155,7 +155,7 @@ resource "null_resource" "vm_permissions" {
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    command     = <<-EOT
       govc permissions.set \
         -principal "${each.key}" \
         -role "${var.role_name}" \
