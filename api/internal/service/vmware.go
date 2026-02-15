@@ -28,14 +28,14 @@ func NewVMwareService(ctx context.Context, cfg *config.Config, log *logger.Logge
 	if log == nil {
 		log = logger.NewWithWriter(io.Discard)
 	}
-	u, err := soap.ParseURL(cfg.VCenterURL)
+	u, err := soap.ParseURL(cfg.ESXiURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	u.User = url.UserPassword(cfg.VCenterUsername, cfg.VCenterPassword)
+	u.User = url.UserPassword(cfg.ESXiUsername, cfg.ESXiPassword)
 
-	client, err := govmomi.NewClient(ctx, u, cfg.VCenterInsecure)
+	client, err := govmomi.NewClient(ctx, u, cfg.ESXiInsecure)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
@@ -62,7 +62,7 @@ func (s *VMwareService) GetClient() *govmomi.Client {
 }
 
 func (s *VMwareService) Close(ctx context.Context) error {
-	if s.client == nil {
+	if s.client != nil {
 		return s.client.Logout(ctx)
 	}
 	return nil
@@ -104,8 +104,8 @@ func (s *VMwareService) ListVMSnapshots(ctx context.Context) (*models.VMListResp
 	}
 
 	response := &models.VMListResponse{
-		VCenterName: client.ServiceContent.About.FullName,
-		VMs:         make([]models.VM, 0, len(vms)),
+		ESXiName: client.ServiceContent.About.FullName,
+		VMs:      make([]models.VM, 0, len(vms)),
 	}
 
 	for _, vm := range vms {
@@ -144,48 +144,6 @@ func (s *VMwareService) extractSnapshots(snapshots []types.VirtualMachineSnapsho
 		}
 	}
 	return result
-}
-
-// RestoreVMsForEvents restores multiple VMs to a snapshot based on event count
-func (s *VMwareService) RestoreVMsForEvents(ctx context.Context, vmNames []string, snapshotName string, eventCount int) error {
-	if eventCount <= 0 {
-		return nil
-	}
-
-	// Limit to available VMs
-	vmCount := eventCount
-	if vmCount > len(vmNames) {
-		vmCount = len(vmNames)
-	}
-
-	s.logger.Info("Restoring VMs", logger.Count(vmCount), logger.Snapshot(snapshotName))
-
-	for i := 0; i < vmCount; i++ {
-		vmName := vmNames[i]
-		if err := s.restoreVM(ctx, vmName, snapshotName); err != nil {
-			s.logger.Error("VM restore failed", logger.VM(vmName), logger.Error(err))
-			continue
-		}
-		s.logger.Info("VM restored successfully", logger.VM(vmName))
-	}
-
-	return nil
-}
-
-// RestoreVMsForEventsWithErrorHandling restores VMs and returns errors for each failed VM
-func (s *VMwareService) RestoreVMsForEventsWithErrorHandling(ctx context.Context, vmNames []string, snapshotName string) []string {
-	var errors []string
-
-	for _, vmName := range vmNames {
-		if err := s.restoreVM(ctx, vmName, snapshotName); err != nil {
-			errors = append(errors, fmt.Sprintf("failed to restore %s: %v", vmName, err))
-			s.logger.Error("VM restore failed", logger.Action("vm_restore"), logger.Status("failed"), logger.VM(vmName), logger.Error(err))
-			continue
-		}
-		s.logger.Info("VM restore successful", logger.Action("vm_restore"), logger.Status("success"), logger.VM(vmName))
-	}
-
-	return errors
 }
 
 // RestoreVMsWithPasswordRotation restores VMs and rotates ESXi user passwords

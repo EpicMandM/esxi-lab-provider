@@ -10,31 +10,31 @@ import (
 func TestLoad(t *testing.T) {
 	// Base valid environment
 	validEnv := map[string]string{
-		"VCENTER_URL":      "https://vcenter.example.com",
-		"VCENTER_USERNAME": "admin",
-		"VCENTER_PASSWORD": "password",
+		"ESXI_URL":      "https://esxi.example.com",
+		"ESXI_USERNAME": "admin",
+		"ESXI_PASSWORD": "password",
 	}
 
 	t.Run("valid config", func(t *testing.T) {
 		for k, v := range validEnv {
 			t.Setenv(k, v)
 		}
-		t.Setenv("VCENTER_INSECURE", "true")
+		t.Setenv("ESXI_INSECURE", "true")
 
 		cfg, err := Load()
 		require.NoError(t, err)
-		assert.Equal(t, "https://vcenter.example.com", cfg.VCenterURL)
-		assert.True(t, cfg.VCenterInsecure)
+		assert.Equal(t, "https://esxi.example.com", cfg.ESXiURL)
+		assert.True(t, cfg.ESXiInsecure)
 	})
 
 	t.Run("insecure defaults to false when empty", func(t *testing.T) {
 		for k, v := range validEnv {
 			t.Setenv(k, v)
 		}
-		t.Setenv("VCENTER_INSECURE", "")
+		t.Setenv("ESXI_INSECURE", "")
 		cfg, err := Load()
 		require.NoError(t, err)
-		assert.False(t, cfg.VCenterInsecure, "VCENTER_INSECURE should default to false")
+		assert.False(t, cfg.ESXiInsecure, "ESXI_INSECURE should default to false")
 	})
 
 	// Table-driven test for missing variables
@@ -44,19 +44,19 @@ func TestLoad(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "missing VCENTER_URL",
-			unset:   "VCENTER_URL",
-			wantErr: "VCENTER_URL is required",
+			name:    "missing ESXI_URL",
+			unset:   "ESXI_URL",
+			wantErr: "ESXI_URL is required",
 		},
 		{
-			name:    "missing VCENTER_USERNAME",
-			unset:   "VCENTER_USERNAME",
-			wantErr: "VCENTER_USERNAME is required",
+			name:    "missing ESXI_USERNAME",
+			unset:   "ESXI_USERNAME",
+			wantErr: "ESXI_USERNAME is required",
 		},
 		{
-			name:    "missing VCENTER_PASSWORD",
-			unset:   "VCENTER_PASSWORD",
-			wantErr: "VCENTER_PASSWORD is required",
+			name:    "missing ESXI_PASSWORD",
+			unset:   "ESXI_PASSWORD",
+			wantErr: "ESXI_PASSWORD is required",
 		},
 	}
 

@@ -61,13 +61,13 @@ func (a *App) run() error {
 		return nil
 	}
 
-	vmsToRestore := a.selectVMsToRestore(vmList, len(activeEvents))
-	if len(vmsToRestore) == 0 {
+	pairs := a.selectVMsToRestore(vmList, len(activeEvents))
+	if len(pairs) == 0 {
 		a.logger.Error("No VMs available in inventory", logger.Action("validation"), logger.Status("no_vms_available"))
 		os.Exit(1)
 	}
 
-	return a.restoreVMs(vmsToRestore, activeEvents)
+	return a.restoreVMs(pairs, activeEvents)
 }
 
 func (a *App) initialize() error {
@@ -140,6 +140,14 @@ func (a *App) initialize() error {
 
 	// Initialize WireGuard service if configured
 	if featureCfg.WireGuard.Enabled {
+		// Load OPNsense API credentials from environment
+		if apiKey := os.Getenv("OPNSENSE_API_KEY"); apiKey != "" {
+			featureCfg.WireGuard.OPNsenseAPIKey = apiKey
+		}
+		if apiSecret := os.Getenv("OPNSENSE_API_SECRET"); apiSecret != "" {
+			featureCfg.WireGuard.OPNsenseAPISecret = apiSecret
+		}
+
 		wireguardSvc := service.NewWireGuardService(&featureCfg.WireGuard)
 		if err := wireguardSvc.ValidateConfig(); err != nil {
 			a.logger.Warn("WireGuard service configuration invalid", logger.Error(err))
@@ -258,66 +266,73 @@ func (a *App) filterActiveEvents(events []*calendar.Event, now time.Time) []Even
 	return activeEvents
 }
 
-func (a *App) selectVMsToRestore(vmList *models.VMListResponse, eventCount int) []string {
+func (a *App) selectVMsToRestore(vmList *models.VMListResponse, eventCount int) []service.UserVMPair {
 	inventoryVMs := buildInventoryMap(vmList.VMs)
-	vmsToRestore := a.selectConfiguredVMs(inventoryVMs, eventCount)
+	pairs := a.selectConfiguredVMs(inventoryVMs, eventCount)
 
-	if len(vmsToRestore) < eventCount {
-		vmsToRestore = a.addFallbackVMs(vmsToRestore, vmList.VMs, eventCount)
+	if len(pairs) < eventCount {
+		pairs = a.addFallbackVMs(pairs, vmList.VMs, eventCount)
 	}
 
-	if len(vmsToRestore) < eventCount {
+	if len(pairs) < eventCount {
 		a.logger.Warn("Insufficient VMs available",
 			logger.Events(eventCount),
-			logger.F("AVAILABLE_VMS", len(vmsToRestore)),
+			logger.F("AVAILABLE_VMS", len(pairs)),
 			logger.F("MESSAGE", "will_restore_all_available"))
 	}
 
-	return vmsToRestore
+	return pairs
 }
 
-func (a *App) selectConfiguredVMs(inventoryVMs map[string]bool, eventCount int) []string {
-	var vmsToRestore []string
+func (a *App) selectConfiguredVMs(inventoryVMs map[string]bool, eventCount int) []service.UserVMPair {
+	var pairs []service.UserVMPair
 
-	for _, configVM := range a.featureCfg.VSphere.VMs {
-		if inventoryVMs[configVM] {
-			vmsToRestore = append(vmsToRestore, configVM)
-			if len(vmsToRestore) >= eventCount {
+	for _, p := range a.featureCfg.ESXi.UserVMPairs() {
+		if inventoryVMs[p.VM] {
+			pairs = append(pairs, p)
+			if len(pairs) >= eventCount {
 				break
 			}
 		}
 	}
 
-	return vmsToRestore
+	return pairs
 }
 
-func (a *App) addFallbackVMs(existing []string, inventory []models.VM, eventCount int) []string {
-	vmsToRestore := existing
+func (a *App) addFallbackVMs(existing []service.UserVMPair, inventory []models.VM, eventCount int) []service.UserVMPair {
+	pairs := existing
 	existingSet := make(map[string]bool)
 
-	for _, vm := range existing {
-		existingSet[vm] = true
+	for _, p := range existing {
+		existingSet[p.VM] = true
 	}
 
 	for _, vm := range inventory {
 		if !existingSet[vm.Name] {
-			vmsToRestore = append(vmsToRestore, vm.Name)
+			pairs = append(pairs, service.UserVMPair{User: "", VM: vm.Name})
 			a.logger.Info("Using fallback VM from inventory", logger.VM(vm.Name), logger.Reason("config_vm_not_found"))
 
-			if len(vmsToRestore) >= eventCount {
+			if len(pairs) >= eventCount {
 				break
 			}
 		}
 	}
 
-	return vmsToRestore
+	return pairs
 }
 
-func (a *App) restoreVMs(vmsToRestore []string, activeEvents []EventInfo) error {
+func (a *App) restoreVMs(pairs []service.UserVMPair, activeEvents []EventInfo) error {
 	eventCount := len(activeEvents)
 	snapshotName := "<latest>"
-	if a.featureCfg.VSphere.SnapshotName != nil {
-		snapshotName = *a.featureCfg.VSphere.SnapshotName
+	if a.featureCfg.ESXi.SnapshotName != nil {
+		snapshotName = *a.featureCfg.ESXi.SnapshotName
+	}
+
+	vmsToRestore := make([]string, len(pairs))
+	usersToRotate := make([]string, len(pairs))
+	for i, p := range pairs {
+		vmsToRestore[i] = p.VM
+		usersToRotate[i] = p.User
 	}
 
 	a.logger.Info("Starting VM restore",
@@ -327,7 +342,6 @@ func (a *App) restoreVMs(vmsToRestore []string, activeEvents []EventInfo) error 
 		logger.F("VMS_TO_RESTORE", len(vmsToRestore)),
 		logger.Snapshot(snapshotName))
 
-	usersToRotate := a.getUsersForVMs(len(vmsToRestore))
 	restoreErrors, passwords := a.vmwareSvc.RestoreVMsWithPasswordRotation(a.ctx, vmsToRestore, usersToRotate, snapshotName)
 
 	if len(passwords) > 0 {
@@ -426,14 +440,6 @@ func (a *App) restoreVMs(vmsToRestore []string, activeEvents []EventInfo) error 
 		logger.F("VMS_RESTORED", len(vmsToRestore)),
 		logger.F("PASSWORDS_ROTATED", len(passwords)))
 	return nil
-}
-
-func (a *App) getUsersForVMs(vmCount int) []string {
-	users := make([]string, 0, vmCount)
-	for i := 0; i < vmCount && i < len(a.featureCfg.VSphere.Users); i++ {
-		users = append(users, a.featureCfg.VSphere.Users[i])
-	}
-	return users
 }
 
 func buildInventoryMap(vms []models.VM) map[string]bool {

@@ -3,11 +3,11 @@ package service
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -24,17 +24,16 @@ type WireGuardConfig struct {
 	MTU                 int      `toml:"mtu"`
 	ClientAddresses     []string `toml:"client_addresses"`
 	Keepalive           int      `toml:"keepalive"`
-	// OPNsense API configuration (loaded from environment)
+	// OPNsense API configuration (overridden from environment variables)
 	OPNsenseURL       string `toml:"opnsense_url"`
-	OPNsenseAPIKey    string `toml:"opnsense_api_key"`
-	OPNsenseAPISecret string `toml:"opnsense_api_secret"`
+	OPNsenseAPIKey    string `toml:"-"`
+	OPNsenseAPISecret string `toml:"-"`
 	AutoRegisterPeers bool   `toml:"auto_register_peers"`
 }
 
 // WireGuardService manages WireGuard tunnel configurations
 type WireGuardService struct {
-	config *WireGuardConfig
-	// Store private keys per user (in production, this should be persisted)
+	config      *WireGuardConfig
 	privateKeys map[string]string
 }
 
@@ -48,7 +47,6 @@ func NewWireGuardService(config *WireGuardConfig) *WireGuardService {
 
 // GenerateKeyPair generates a new WireGuard private/public key pair
 func GenerateKeyPair() (privateKey, publicKey string, err error) {
-	// Generate random 32-byte private key
 	var privKeyBytes [32]byte
 	if _, err := rand.Read(privKeyBytes[:]); err != nil {
 		return "", "", fmt.Errorf("failed to generate random key: %w", err)
@@ -59,11 +57,9 @@ func GenerateKeyPair() (privateKey, publicKey string, err error) {
 	privKeyBytes[31] &= 127
 	privKeyBytes[31] |= 64
 
-	// Derive public key from private key
 	var pubKeyBytes [32]byte
 	curve25519.ScalarBaseMult(&pubKeyBytes, &privKeyBytes)
 
-	// Encode to base64
 	privateKey = base64.StdEncoding.EncodeToString(privKeyBytes[:])
 	publicKey = base64.StdEncoding.EncodeToString(pubKeyBytes[:])
 
@@ -77,7 +73,6 @@ func (w *WireGuardService) RotateUserKey(username string) (privateKey, publicKey
 		return "", "", fmt.Errorf("failed to generate key pair for %s: %w", username, err)
 	}
 
-	// Store the private key (in production, persist this securely)
 	w.privateKeys[username] = privKey
 
 	return privKey, pubKey, nil
@@ -98,7 +93,6 @@ func (w *WireGuardService) GenerateClientConfig(username string, userIndex int) 
 		return "", fmt.Errorf("no private key found for user %s", username)
 	}
 
-	// Build the configuration file
 	var sb strings.Builder
 
 	sb.WriteString("[Interface]\n")
@@ -124,27 +118,6 @@ func (w *WireGuardService) GenerateClientConfig(username string, userIndex int) 
 	return sb.String(), nil
 }
 
-// GetPublicKey retrieves the public key for a username
-func (w *WireGuardService) GetPublicKey(username string) (string, error) {
-	privateKey, ok := w.privateKeys[username]
-	if !ok {
-		return "", fmt.Errorf("no private key found for user %s", username)
-	}
-
-	// Decode private key
-	privKeyBytes, err := base64.StdEncoding.DecodeString(privateKey)
-	if err != nil || len(privKeyBytes) != 32 {
-		return "", fmt.Errorf("invalid private key for user %s", username)
-	}
-
-	// Derive public key
-	var privKey, pubKey [32]byte
-	copy(privKey[:], privKeyBytes)
-	curve25519.ScalarBaseMult(&pubKey, &privKey)
-
-	return base64.StdEncoding.EncodeToString(pubKey[:]), nil
-}
-
 // ValidateConfig validates the WireGuard configuration
 func (w *WireGuardService) ValidateConfig() error {
 	if !w.config.Enabled {
@@ -163,18 +136,12 @@ func (w *WireGuardService) ValidateConfig() error {
 		return fmt.Errorf("client_addresses cannot be empty")
 	}
 
-	// Validate server public key format
 	decoded, err := base64.StdEncoding.DecodeString(w.config.ServerPublicKey)
 	if err != nil || len(decoded) != 32 {
 		return fmt.Errorf("invalid server_public_key format (must be 32-byte base64)")
 	}
 
 	return nil
-}
-
-// SecureCompare performs constant-time comparison of two strings
-func SecureCompare(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 // OPNsenseClient represents a client for OPNsense WireGuard API
@@ -199,19 +166,128 @@ func NewOPNsenseClient(url, apiKey, apiSecret string) *OPNsenseClient {
 	}
 }
 
-// RegisterPeer registers a new WireGuard peer with OPNsense
-func (c *OPNsenseClient) RegisterPeer(name, publicKey, tunnelAddress string, keepalive int) error {
-	// OPNsense WireGuard API endpoint for creating a client
-	url := fmt.Sprintf("%s/api/wireguard/client/addClient", c.baseURL)
+// PeerRow represents a WireGuard peer from the OPNsense search response
+type PeerRow struct {
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	PubKey        string `json:"pubkey"`
+	TunnelAddress string `json:"tunneladdress"`
+	Servers       string `json:"servers"`
+}
+
+// searchResponse represents the OPNsense search API response
+type searchResponse struct {
+	Rows []PeerRow `json:"rows"`
+}
+
+// normalizeTunnelAddress strips the CIDR suffix (e.g. "/32") so that
+// addresses from different sources can be compared reliably.
+func normalizeTunnelAddress(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if idx := strings.Index(addr, "/"); idx != -1 {
+		return addr[:idx]
+	}
+	return addr
+}
+
+// SearchPeerByTunnelAddress finds an existing peer by its tunnel address.
+// The comparison ignores CIDR notation so "172.17.18.103/32" matches "172.17.18.103".
+func (c *OPNsenseClient) SearchPeerByTunnelAddress(tunnelAddress string) (*PeerRow, error) {
+	url := fmt.Sprintf("%s/api/wireguard/client/search_client", c.baseURL)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBufferString(`{}`))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(c.apiKey, c.apiSecret)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search peers: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("search peers returned status %d", resp.StatusCode)
+	}
+
+	var result searchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	normalizedTarget := normalizeTunnelAddress(tunnelAddress)
+	for _, row := range result.Rows {
+		if normalizeTunnelAddress(row.TunnelAddress) == normalizedTarget {
+			return &row, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// UpdatePeer updates an existing WireGuard peer's public key.
+// The servers field MUST be included to preserve the peer's attachment to
+// the WireGuard server — OPNsense clears omitted fields on set_client.
+func (c *OPNsenseClient) UpdatePeer(uuid, name, publicKey, tunnelAddress, servers string) error {
+	url := fmt.Sprintf("%s/api/wireguard/client/set_client/%s", c.baseURL, uuid)
+
+	clientPayload := map[string]interface{}{
+		"enabled":       "1",
+		"name":          name,
+		"pubkey":        publicKey,
+		"tunneladdress": tunnelAddress,
+		"servers":       servers,
+	}
 
 	payload := map[string]interface{}{
-		"client": map[string]interface{}{
-			"enabled":       "1",
-			"name":          name,
-			"pubkey":        publicKey,
-			"tunneladdress": tunnelAddress,
-			"keepalive":     fmt.Sprintf("%d", keepalive),
-		},
+		"client": clientPayload,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(c.apiKey, c.apiSecret)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to update peer: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if err := checkMutationResponse(resp); err != nil {
+		return fmt.Errorf("failed to update peer %s: %w", uuid, err)
+	}
+
+	return c.applyChanges()
+}
+
+// CreatePeer creates a new WireGuard peer in OPNsense
+func (c *OPNsenseClient) CreatePeer(name, publicKey, tunnelAddress string, keepalive int) error {
+	url := fmt.Sprintf("%s/api/wireguard/client/add_client", c.baseURL)
+
+	clientPayload := map[string]interface{}{
+		"enabled":       "1",
+		"name":          name,
+		"pubkey":        publicKey,
+		"tunneladdress": tunnelAddress,
+	}
+	if keepalive > 0 {
+		clientPayload["keepalive"] = fmt.Sprintf("%d", keepalive)
+	}
+
+	payload := map[string]interface{}{
+		"client": clientPayload,
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -231,18 +307,53 @@ func (c *OPNsenseClient) RegisterPeer(name, publicKey, tunnelAddress string, kee
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			err = fmt.Errorf("failed to close response body: %w", closeErr)
-		}
-	}()
+	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("OPNsense API returned status %d", resp.StatusCode)
+	if err := checkMutationResponse(resp); err != nil {
+		return fmt.Errorf("failed to create peer: %w", err)
 	}
 
-	// Apply the changes
 	return c.applyChanges()
+}
+
+// mutationResponse represents the OPNsense response for set/add operations.
+// On success: {"result": "saved", "uuid": "..."}
+// On validation error: {"result": "", "validations": {"client.pubkey": "..."}}
+type mutationResponse struct {
+	Result      string                 `json:"result"`
+	UUID        string                 `json:"uuid"`
+	Validations map[string]interface{} `json:"validations"`
+}
+
+// checkMutationResponse reads and validates an OPNsense set/add API response.
+// OPNsense returns HTTP 200 even for validation errors, so we must inspect
+// the body to detect failures.
+func checkMutationResponse(resp *http.Response) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("OPNsense returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result mutationResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		// Some endpoints return non-JSON; treat as success if HTTP was 200
+		return nil
+	}
+
+	if len(result.Validations) > 0 {
+		valJSON, _ := json.Marshal(result.Validations)
+		return fmt.Errorf("OPNsense validation errors: %s", string(valJSON))
+	}
+
+	if result.Result != "saved" && result.Result != "" {
+		return fmt.Errorf("OPNsense returned unexpected result: %q (body: %s)", result.Result, string(body))
+	}
+
+	return nil
 }
 
 // applyChanges tells OPNsense to apply WireGuard configuration changes
@@ -260,23 +371,22 @@ func (c *OPNsenseClient) applyChanges() error {
 	if err != nil {
 		return fmt.Errorf("failed to reconfigure: %w", err)
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			err = fmt.Errorf("failed to close response body: %w", closeErr)
-		}
-	}()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("reconfigure returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("reconfigure returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
 }
 
-// RegisterPeerWithOPNsense registers the peer's public key with OPNsense server
+// RegisterPeerWithOPNsense updates an existing peer's public key, or creates a new one.
+// This works even if the peer currently has a placeholder or empty public key (e.g. freshly
+// provisioned by Terraform). The peer is looked up by tunnel address, not by key.
 func (w *WireGuardService) RegisterPeerWithOPNsense(username string, publicKey string, userIndex int) error {
 	if !w.config.AutoRegisterPeers {
-		return nil // Auto-registration disabled
+		return nil
 	}
 
 	if w.config.OPNsenseURL == "" || w.config.OPNsenseAPIKey == "" {
@@ -288,14 +398,39 @@ func (w *WireGuardService) RegisterPeerWithOPNsense(username string, publicKey s
 	}
 
 	client := NewOPNsenseClient(w.config.OPNsenseURL, w.config.OPNsenseAPIKey, w.config.OPNsenseAPISecret)
-
-	// Use the configured tunnel address for this user
 	tunnelAddress := w.config.ClientAddresses[userIndex]
 
-	err := client.RegisterPeer(username, publicKey, tunnelAddress, w.config.Keepalive)
+	// Search for existing peer by tunnel address (works regardless of current key state)
+	existing, err := client.SearchPeerByTunnelAddress(tunnelAddress)
 	if err != nil {
-		return fmt.Errorf("failed to register peer with OPNsense: %w", err)
+		return fmt.Errorf("failed to search for existing peer: %w", err)
 	}
 
-	return nil
+	if existing != nil {
+		// Update existing peer's public key (rotation or first-time key assignment)
+		peerName := existing.Name
+		if peerName == "" {
+			peerName = username
+		}
+		if err := client.UpdatePeer(existing.UUID, peerName, publicKey, tunnelAddress, existing.Servers); err != nil {
+			return fmt.Errorf("failed to update peer (uuid=%s, tunnel=%s): %w", existing.UUID, tunnelAddress, err)
+		}
+
+		// Verify the key was actually persisted by reading it back
+		updated, err := client.SearchPeerByTunnelAddress(tunnelAddress)
+		if err != nil {
+			return fmt.Errorf("failed to verify peer update: %w", err)
+		}
+		if updated == nil {
+			return fmt.Errorf("peer disappeared after update (tunnel=%s)", tunnelAddress)
+		}
+		if updated.PubKey != publicKey {
+			return fmt.Errorf("peer key mismatch after update: OPNsense has %s, expected %s (uuid=%s)", updated.PubKey, publicKey, existing.UUID)
+		}
+
+		return nil
+	}
+
+	// No existing peer found — create a new one
+	return fmt.Errorf("no existing peer found for tunnel address %s — peers must be pre-provisioned by Terraform", tunnelAddress)
 }
