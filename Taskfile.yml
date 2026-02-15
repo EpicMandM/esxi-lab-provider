@@ -5,146 +5,18 @@ vars:
   BINARY_NAME: esxi-lab-scheduler
   REMOTE_PATH: /opt/esxi-lab
   SERVICE_NAME: esxi-lab-scheduler
+  USER: '{{.DEPLOY_USER | default "zhukov"}}'
+  HOST: '{{.DEPLOY_HOST | default "172.17.17.8"}}'
+  PORT: '{{.DEPLOY_PORT | default "22"}}'
+  SSH_KEY: '{{.HOME}}/.ssh/id_rsa_esxi_lab'
+  SSH: ssh -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -p {{.PORT}} {{.USER}}@{{.HOST}}
+  SCP: scp -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -P {{.PORT}}
 
 tasks:
   default:
-    desc: Deploy locally with docker-compose (default)
+    desc: Build the scheduler binary
     cmds:
-      - task: dev-up
-
-  dev-build:
-    desc: Build Docker image for local deployment
-    cmds:
-      - docker-compose build scheduler
-
-  dev-up:
-    desc: Start scheduler with docker-compose
-    deps: [dev-build]
-    cmds:
-      - mkdir -p data
-      - docker-compose up -d
-      - echo "✓ Scheduler deployed locally with docker-compose"
-      - echo "View logs:task dev-logs"
-      - echo "Check status:task dev-status"
-
-  dev-down:
-    desc: Stop and remove all containers
-    cmds:
-      - docker-compose down
-      - echo "✓ Scheduler stopped"
-
-  dev-restart:
-    desc: Restart the scheduler
-    cmds:
-      - docker-compose restart scheduler
-      - echo "✓ Scheduler restarted"
-
-  dev-logs:
-    desc: View scheduler logs
-    cmds:
-      - docker-compose logs -f scheduler
-
-  dev-logs-tail:
-    desc: View last 50 lines of scheduler logs
-    cmds:
-      - docker-compose logs --tail=50 scheduler
-
-  dev-logs-cron:
-    desc: View cron logs
-    cmds:
-      - docker-compose logs -f cron
-
-  dev-status:
-    desc: Check container status
-    cmds:
-      - docker-compose ps
-
-  dev-clean:
-    desc: Stop containers and remove volumes
-    cmds:
-      - docker-compose down -v
-      - rm -rf data
-      - echo "✓ Local deployment cleaned"
-
-  dev-exec:
-    desc: Execute scheduler once manually
-    cmds:
-      - docker-compose run --rm scheduler /app/scheduler
-
-  dev-test:
-    desc: Build and test the scheduler locally
-    cmds:
-      - task: dev-build
-      - docker-compose run --rm scheduler /app/scheduler
-      - echo "✓ Test run completed. Check output above for errors."
-
-  dev-verify-config:
-    desc: Verify configuration loads correctly (fast check)
-    cmds:
-      - task: dev-build
-      - echo "Testing configuration loading..."
-      - docker-compose run --rm scheduler sh -c "cat /app/config/user_config.toml && echo '\n--- Config file loaded successfully ---'"
-
-  dev-shell:
-    desc: Open shell in scheduler container (debug)
-    cmds:
-      - docker-compose exec scheduler sh
-
-  ssh-keygen:
-    desc: Generate SSH key and upload to remote server for passwordless access
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
-      KEY_PATH: '{{.HOME}}/.ssh/id_rsa_esxi_lab'
-    cmds:
-      - |
-        if [ ! -f {{.KEY_PATH}} ]; then
-          echo "Generating new SSH key..."
-          ssh-keygen -t rsa -b 4096 -f {{.KEY_PATH}} -N "" -C "esxi-lab-deployment"
-        else
-          echo "SSH key already exists at {{.KEY_PATH}}"
-        fi
-      - echo "Uploading SSH key to {{.USER}}@{{.HOST}}:{{.PORT}}"
-      - ssh-copy-id -i {{.KEY_PATH}}.pub -p {{.PORT}} {{.USER}}@{{.HOST}}
-      - echo "SSH key configured! Test with ssh -i {{.KEY_PATH}} -p {{.PORT}} {{.USER}}@{{.HOST}}"
-      - echo "Add to your ~/.ssh/config:"
-      - |
-        echo "Host esxi-lab"
-        echo "  HostName {{.HOST}}"
-        echo "  Port {{.PORT}}"
-        echo "  User {{.USER}}"
-        echo "  IdentityFile {{.KEY_PATH}}"
-
-  setup-sudo:
-    desc: Configure passwordless sudo for deployment user (requires password once)
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
-    cmds:
-      - echo "Configuring passwordless sudo for {{.USER}} on {{.HOST}}"
-      - |
-        ssh -t -p {{.PORT}} {{.USER}}@{{.HOST}} "echo '{{.USER}} ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/{{.USER}} > /dev/null && sudo chmod 0440 /etc/sudoers.d/{{.USER}}"
-      - echo "Passwordless sudo configured! Future deployments won't require password."
-
-  setup-logging:
-    desc: Configure journald to retain logs for 7 days
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
-    cmds:
-      - echo "Configuring journald log retention (7 days) on {{.HOST}}"
-      - |
-        ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo mkdir -p /etc/systemd/journald.conf.d && sudo tee /etc/systemd/journald.conf.d/retention.conf > /dev/null <<EOF
-        [Journal]
-        Storage=persistent
-        MaxRetentionSec=7d
-        SystemMaxUse=500M
-        EOF"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl restart systemd-journald"
-      - echo "Log retention configured! Logs will be kept for 7 days."
+      - task: build
 
   build:
     desc: Build the scheduler binary
@@ -156,22 +28,48 @@ tasks:
     generates:
       - "{{.BINARY_NAME}}"
 
+  ssh-keygen:
+    desc: Generate SSH key and upload to remote server for passwordless access
+    cmds:
+      - |
+        if [ ! -f {{.SSH_KEY}} ]; then
+          echo "Generating new SSH key..."
+          ssh-keygen -t rsa -b 4096 -f {{.SSH_KEY}} -N "" -C "esxi-lab-deployment"
+        else
+          echo "SSH key already exists at {{.SSH_KEY}}"
+        fi
+      - ssh-copy-id -i {{.SSH_KEY}}.pub -p {{.PORT}} {{.USER}}@{{.HOST}}
+
+  setup-sudo:
+    desc: Configure passwordless sudo for deployment user
+    cmds:
+      - |
+        {{.SSH}} -t "echo '{{.USER}} ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/{{.USER}} > /dev/null && sudo chmod 0440 /etc/sudoers.d/{{.USER}}"
+
+  setup-logging:
+    desc: Configure journald to retain logs for 7 days
+    cmds:
+      - |
+        {{.SSH}} "sudo mkdir -p /etc/systemd/journald.conf.d && sudo tee /etc/systemd/journald.conf.d/retention.conf > /dev/null <<EOF
+        [Journal]
+        Storage=persistent
+        MaxRetentionSec=7d
+        SystemMaxUse=500M
+        EOF"
+      - '{{.SSH}} "sudo systemctl restart systemd-journald"'
+
   deploy:
-    desc: Deploy scheduler to remote server via SSH (requires DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT env vars)
+    desc: Deploy scheduler to remote server via SSH
     deps: [build]
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
     cmds:
       - echo "Deploying to {{.USER}}@{{.HOST}}:{{.PORT}}"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo mkdir -p {{.REMOTE_PATH}} && sudo chown {{.USER}}:{{.USER}} {{.REMOTE_PATH}}"
-      - scp -P {{.PORT}} {{.BINARY_NAME}} {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/{{.BINARY_NAME}}
-      - scp -P {{.PORT}} .env {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/.env
-      - scp -P {{.PORT}} api/data/user_config.toml {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/user_config.toml
-      - scp -P {{.PORT}} infra/terraform/service-account.json {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/service-account.json
+      - '{{.SSH}} "sudo mkdir -p {{.REMOTE_PATH}} && sudo chown {{.USER}}:{{.USER}} {{.REMOTE_PATH}}"'
+      - '{{.SCP}} {{.BINARY_NAME}} {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/{{.BINARY_NAME}}'
+      - '{{.SCP}} .env {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/.env'
+      - '{{.SCP}} api/data/user_config.toml {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/user_config.toml'
+      - '{{.SCP}} infra/terraform/service-account.json {{.USER}}@{{.HOST}}:{{.REMOTE_PATH}}/service-account.json'
       - |
-        ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo tee /etc/systemd/system/{{.SERVICE_NAME}}.service > /dev/null <<EOF
+        {{.SSH}} "sudo tee /etc/systemd/system/{{.SERVICE_NAME}}.service > /dev/null <<EOF
         [Unit]
         Description=ESXi Lab Scheduler
         After=network.target
@@ -181,6 +79,7 @@ tasks:
         User={{.USER}}
         WorkingDirectory={{.REMOTE_PATH}}
         Environment=CONFIG_PATH={{.REMOTE_PATH}}/user_config.toml
+        Environment=SERVICE_ACCOUNT_PATH={{.REMOTE_PATH}}/service-account.json
         EnvironmentFile={{.REMOTE_PATH}}/.env
         ExecStart={{.REMOTE_PATH}}/{{.BINARY_NAME}}
         StandardOutput=journal
@@ -191,7 +90,7 @@ tasks:
         WantedBy=multi-user.target
         EOF"
       - |
-        ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo tee /etc/systemd/system/{{.SERVICE_NAME}}.timer > /dev/null <<EOF
+        {{.SSH}} "sudo tee /etc/systemd/system/{{.SERVICE_NAME}}.timer > /dev/null <<EOF
         [Unit]
         Description=ESXi Lab Scheduler Timer (runs at the start of every hour)
 
@@ -203,64 +102,42 @@ tasks:
         [Install]
         WantedBy=timers.target
         EOF"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo chmod +x {{.REMOTE_PATH}}/{{.BINARY_NAME}}"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl daemon-reload"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl enable {{.SERVICE_NAME}}.timer"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl restart {{.SERVICE_NAME}}.timer"
-      - echo "Deployment complete! Check status with 'task status'"
+      - '{{.SSH}} "sudo chmod +x {{.REMOTE_PATH}}/{{.BINARY_NAME}}"'
+      - '{{.SSH}} "sudo systemctl daemon-reload"'
+      - '{{.SSH}} "sudo systemctl enable {{.SERVICE_NAME}}.timer"'
+      - '{{.SSH}} "sudo systemctl restart {{.SERVICE_NAME}}.timer"'
 
   status:
     desc: Check scheduler status on remote server
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
     cmds:
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl status {{.SERVICE_NAME}}.timer"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl list-timers {{.SERVICE_NAME}}.timer"
+      - '{{.SSH}} "sudo systemctl status {{.SERVICE_NAME}}.timer"'
+      - '{{.SSH}} "sudo systemctl list-timers {{.SERVICE_NAME}}.timer"'
 
   logs:
     desc: View scheduler logs on remote server
     vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
       LINES: '{{.LINES | default "50"}}'
     cmds:
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n {{.LINES}} --no-pager"
+      - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n {{.LINES}} --no-pager"'
 
   stop:
     desc: Stop and disable scheduler on remote server
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
     cmds:
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl stop {{.SERVICE_NAME}}.timer"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl disable {{.SERVICE_NAME}}.timer"
-      - echo "Scheduler stopped and disabled"
+      - '{{.SSH}} "sudo systemctl stop {{.SERVICE_NAME}}.timer"'
+      - '{{.SSH}} "sudo systemctl disable {{.SERVICE_NAME}}.timer"'
 
   clean:
     desc: Remove deployment files from remote server
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
     cmds:
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl stop {{.SERVICE_NAME}}.timer"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl disable {{.SERVICE_NAME}}.timer"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo rm -f /etc/systemd/system/{{.SERVICE_NAME}}.service"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo rm -f /etc/systemd/system/{{.SERVICE_NAME}}.timer"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo rm -rf {{.REMOTE_PATH}}"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl daemon-reload"
-      - echo "Deployment cleaned up"
+      - '{{.SSH}} "sudo systemctl stop {{.SERVICE_NAME}}.timer"'
+      - '{{.SSH}} "sudo systemctl disable {{.SERVICE_NAME}}.timer"'
+      - '{{.SSH}} "sudo rm -f /etc/systemd/system/{{.SERVICE_NAME}}.service"'
+      - '{{.SSH}} "sudo rm -f /etc/systemd/system/{{.SERVICE_NAME}}.timer"'
+      - '{{.SSH}} "sudo rm -rf {{.REMOTE_PATH}}"'
+      - '{{.SSH}} "sudo systemctl daemon-reload"'
 
   test-run:
-    desc: Test run the scheduler once on remote server
-    vars:
-      USER: '{{.DEPLOY_USER | default "zhukov"}}'
-      HOST: '{{.DEPLOY_HOST | default "10.39.101.79"}}'
-      PORT: '{{.DEPLOY_PORT | default "22"}}'
+    desc: Trigger a single scheduler run on remote server
     cmds:
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo systemctl start {{.SERVICE_NAME}}.service"
-      - ssh -p {{.PORT}} {{.USER}}@{{.HOST}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 50"
+      - '{{.SSH}} "sudo systemctl start {{.SERVICE_NAME}}.service"'
+      - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 50"'
