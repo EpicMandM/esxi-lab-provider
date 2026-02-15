@@ -17,7 +17,7 @@ type VM struct {
 }
 
 type VMListResponse struct {
-	VCenterName string `json:"vcenter_name"`
-	TotalVMs    int    `json:"total_vms"`
-	VMs         []VM   `json:"vms"`
+	ESXiName string `json:"esxi_name"`
+	TotalVMs int    `json:"total_vms"`
+	VMs      []VM   `json:"vms"`
 }

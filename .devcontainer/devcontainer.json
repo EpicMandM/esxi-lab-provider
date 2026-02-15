@@ -3,6 +3,7 @@
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "features": {
         "ghcr.io/devcontainers/features/go:1": {},
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers-extra/features/ansible:2": {},
         "ghcr.io/robbert229/devcontainer-features/opentofu:1": {},
         "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
@@ -15,13 +16,19 @@
         "--cap-add=NET_ADMIN",
         "--cap-add=SYS_MODULE"
     ],
-    "postStartCommand": "sudo apt-get update && sudo apt-get install -y wireguard-tools",
+    "postStartCommand": [
+        "bash",
+        "-lc",
+        "sudo apt-get update && sudo apt-get install -y wireguard-tools curl && curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash && tflint --init && pre-commit install && pre-commit install --hook-type commit-msg"
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
                 "opentofu.vscode-opentofu",
                 "redhat.ansible",
-                "task.vscode-task"
+                "task.vscode-task",
+                "vscode-icons-team.vscode-icons",
+                "ms-azuretools.vscode-docker"
             ]
         }
     }

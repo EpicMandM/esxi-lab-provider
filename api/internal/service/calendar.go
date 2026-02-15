@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"os"
 
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
@@ -14,7 +13,7 @@ type CalendarService struct {
 }
 
 func NewCalendarService(ctx context.Context, config CalendarConfig) (*CalendarService, error) {
-	tokenJSON, err := os.ReadFile(config.ServiceAccountPath)
+	tokenJSON, err := config.LoadServiceAccountToken()
 	if err != nil {
 		return nil, err
 	}

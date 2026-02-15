@@ -9,10 +9,10 @@ import (
 )
 
 type Config struct {
-	VCenterURL      string
-	VCenterUsername string
-	VCenterPassword string
-	VCenterInsecure bool
+	ESXiURL      string
+	ESXiUsername string
+	ESXiPassword string
+	ESXiInsecure bool
 }
 
 // Load loads configuration from environment variables only.
@@ -30,10 +30,10 @@ func LoadWithFile(envFile string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		VCenterURL:      os.Getenv("VCENTER_URL"),
-		VCenterUsername: os.Getenv("VCENTER_USERNAME"),
-		VCenterPassword: os.Getenv("VCENTER_PASSWORD"),
-		VCenterInsecure: parseInsecure(os.Getenv("VCENTER_INSECURE")),
+		ESXiURL:      os.Getenv("ESXI_URL"),
+		ESXiUsername: os.Getenv("ESXI_USERNAME"),
+		ESXiPassword: os.Getenv("ESXI_PASSWORD"),
+		ESXiInsecure: parseInsecure(os.Getenv("ESXI_INSECURE")),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -45,14 +45,14 @@ func LoadWithFile(envFile string) (*Config, error) {
 
 // Validate checks if all required fields are set.
 func (c *Config) Validate() error {
-	if c.VCenterURL == "" {
-		return fmt.Errorf("VCENTER_URL is required")
+	if c.ESXiURL == "" {
+		return fmt.Errorf("ESXI_URL is required")
 	}
-	if c.VCenterUsername == "" {
-		return fmt.Errorf("VCENTER_USERNAME is required")
+	if c.ESXiUsername == "" {
+		return fmt.Errorf("ESXI_USERNAME is required")
 	}
-	if c.VCenterPassword == "" {
-		return fmt.Errorf("VCENTER_PASSWORD is required")
+	if c.ESXiPassword == "" {
+		return fmt.Errorf("ESXI_PASSWORD is required")
 	}
 	return nil
 }

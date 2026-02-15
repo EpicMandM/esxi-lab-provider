@@ -19,12 +19,26 @@
 go.work
 
 # Project-specific files
+# Environment with secrets
+.env
+# Compiled Go binary
+api/main
 # Service account credentials
 service-account.json
 **/service-account.json
 *.json.key
+# Secrets directory
+.secrets/
 # Task files
 .task
+# Local data directory (root level only, not api/data/)
+/data/
+# Generated config (reproduced by Terraform)
+api/data/user_config.toml
+# Docker volumes
+*.db
+# OPNsense config backups (contain private keys)
+*.xml
 
 
 # npm
@@ -243,9 +257,16 @@ pids
 *.tfstate
 *.tfstate.*
 
+.terraform.lock.hcl
+
 # Crash log files
 crash.log
 crash.*.log
+
+# WireGuard keys directory
+**/keys/
+*.key
+*.psk
 
 # Exclude all .tfvars files, which are likely to contain sensitive data, such as
 # password, private keys, and other secrets. These should not be part of version control as
