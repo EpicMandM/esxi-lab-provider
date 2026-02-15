@@ -207,7 +207,7 @@ func (c *OPNsenseClient) SearchPeerByTunnelAddress(tunnelAddress string) (*PeerR
 	if err != nil {
 		return nil, fmt.Errorf("failed to search peers: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("search peers returned status %d", resp.StatusCode)
@@ -263,7 +263,7 @@ func (c *OPNsenseClient) UpdatePeer(uuid, name, publicKey, tunnelAddress, server
 	if err != nil {
 		return fmt.Errorf("failed to update peer: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkMutationResponse(resp); err != nil {
 		return fmt.Errorf("failed to update peer %s: %w", uuid, err)
@@ -307,7 +307,7 @@ func (c *OPNsenseClient) CreatePeer(name, publicKey, tunnelAddress string, keepa
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkMutationResponse(resp); err != nil {
 		return fmt.Errorf("failed to create peer: %w", err)
@@ -371,7 +371,7 @@ func (c *OPNsenseClient) applyChanges() error {
 	if err != nil {
 		return fmt.Errorf("failed to reconfigure: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
