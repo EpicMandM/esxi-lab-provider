@@ -5,94 +5,101 @@ terraform {
       source  = "browningluke/opnsense"
       version = "0.16.1"
     }
+
   }
 }
 
 provider "opnsense" {
-  uri        = var.opnsense_url
-  api_key    = var.opnsense_api_key
-  api_secret = var.opnsense_api_secret
+  uri            = var.opnsense_url
+  api_key        = var.opnsense_api_key
+  api_secret     = var.opnsense_api_secret
+  allow_insecure = true
 }
 
-# Peer 1 - Development Client
+locals {
+  # Unique placeholder keys used when provisioning peer slots.
+  # OPNsense requires each peer to have a unique public key.
+  # The Go application replaces these with real keys during rotation.
+  placeholder_public_keys = {
+    peer1 = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    peer2 = "AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    peer3 = "AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    peer4 = "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  }
+}
+
+# ──────────────────────────────────────────────
+# WireGuard Peers (provisioned as empty slots)
+# ──────────────────────────────────────────────
+# Terraform creates peer resources with a placeholder key.
+# The Go application manages actual keys via OPNsense API rotation.
+
 resource "opnsense_wireguard_client" "peer1" {
   enabled        = true
-  name           = "dev-client-1"
-  public_key     = var.peer1_public_key
-  psk            = var.peer1_preshared_key
-  tunnel_address = [var.peer1_allowed_ips]
-  server_address = var.peer1_server_address
-  server_port    = var.peer1_server_port
-  keep_alive     = 25
+  name           = "lab-user-1"
+  public_key     = local.placeholder_public_keys["peer1"]
+  tunnel_address = [var.peer1_tunnel_address]
+
+  lifecycle {
+    ignore_changes = [public_key]
+  }
 }
 
-# Peer 2 - Development Client
 resource "opnsense_wireguard_client" "peer2" {
   enabled        = true
-  name           = "dev-client-2"
-  public_key     = var.peer2_public_key
-  psk            = var.peer2_preshared_key
-  tunnel_address = [var.peer2_allowed_ips]
-  server_address = var.peer2_server_address
-  server_port    = var.peer2_server_port
-  keep_alive     = 25
+  name           = "lab-user-2"
+  public_key     = local.placeholder_public_keys["peer2"]
+  tunnel_address = [var.peer2_tunnel_address]
+
+  lifecycle {
+    ignore_changes = [public_key]
+  }
 }
 
-# Peer 3 - Development Client
 resource "opnsense_wireguard_client" "peer3" {
   enabled        = true
-  name           = "dev-client-3"
-  public_key     = var.peer3_public_key
-  psk            = var.peer3_preshared_key
-  tunnel_address = [var.peer3_allowed_ips]
-  server_address = var.peer3_server_address
-  server_port    = var.peer3_server_port
-  keep_alive     = 25
+  name           = "lab-user-3"
+  public_key     = local.placeholder_public_keys["peer3"]
+  tunnel_address = [var.peer3_tunnel_address]
+
+  lifecycle {
+    ignore_changes = [public_key]
+  }
 }
 
-# Create WireGuard server instance
-resource "opnsense_wireguard_server" "dev_server" {
-  enabled = true
-  name    = "wg-dev-server"
+resource "opnsense_wireguard_client" "peer4" {
+  enabled        = true
+  name           = "lab-user-4"
+  public_key     = local.placeholder_public_keys["peer4"]
+  tunnel_address = [var.peer4_tunnel_address]
 
-  private_key = var.server_private_key
-  public_key  = var.server_public_key
-
-  port = var.wireguard_port
-  mtu  = var.wireguard_mtu
-
-  dns = var.wireguard_dns
-
-  tunnel_address = [var.server_tunnel_address]
-
-  peers = [
-    opnsense_wireguard_client.peer1.id,
-    opnsense_wireguard_client.peer2.id,
-    opnsense_wireguard_client.peer3.id,
-  ]
+  lifecycle {
+    ignore_changes = [public_key]
+  }
 }
 
+# ──────────────────────────────────────────────
+# WireGuard Server
+# ──────────────────────────────────────────────
 
-# Allow WireGuard traffic on WAN
-resource "opnsense_firewall_filter" "allow_wireguard" {
+resource "opnsense_wireguard_server" "wg" {
   enabled     = true
-  description = "Allow WireGuard Inbound"
+  name        = var.wireguard_server_name
+  private_key = var.wireguard_server_private_key
+  public_key  = var.wireguard_server_public_key
+  port        = var.wireguard_server_port
+  mtu         = var.wireguard_server_mtu
+  dns         = var.wireguard_server_dns
 
-  interface = {
-    interface = ["wan", "lan"]
-  }
+  tunnel_address = [var.wireguard_server_tunnel_address]
 
-  filter = {
-    action    = "pass"
-    direction = "in"
-    protocol  = "UDP"
-
-    source = {
-      net = "any"
-    }
-
-    destination = {
-      port = tostring(var.wireguard_port)
-    }
-  }
+  peers = concat(
+    var.wireguard_existing_peer_ids,
+    [
+      opnsense_wireguard_client.peer1.id,
+      opnsense_wireguard_client.peer2.id,
+      opnsense_wireguard_client.peer3.id,
+      opnsense_wireguard_client.peer4.id,
+    ]
+  )
 }

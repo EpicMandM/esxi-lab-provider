@@ -1,33 +1,33 @@
-# OPNsense Connection Configuration
-opnsense_url          = "https://192.168.1.1"
-opnsense_api_key      = "your-api-key-here"
-opnsense_api_secret   = "your-api-secret-here"
+# OPNsense Connection
+opnsense_url        = "https://192.168.1.1"
+opnsense_api_key    = "your-api-key-here"
+opnsense_api_secret = "your-api-secret-here"
 
-# WireGuard Server Configuration
-wireguard_port         = 51820
-wireguard_mtu          = -1  # -1 uses MTU from main interface
-wireguard_dns          = ["1.1.1.1", "8.8.8.8"]
-server_tunnel_address  = "10.10.10.1/24"
-server_public_key      = "server-public-key-here"
-server_private_key     = "server-private-key-here"
+# WireGuard Server
+wireguard_server_name           = "WG"
+wireguard_server_public_key     = "server-public-key-here"
+wireguard_server_private_key    = "server-private-key-here"
+wireguard_server_port           = 51820
+wireguard_public_endpoint       = "203.0.113.1:51820"
+wireguard_server_mtu            = -1
+wireguard_server_dns            = []
+wireguard_server_tunnel_address = "10.10.10.1/24"
 
-# Peer 1 Configuration
-peer1_public_key      = "peer1-public-key-here"
-peer1_preshared_key   = ""  # Optional
-peer1_allowed_ips     = "10.10.10.2/32"
-peer1_server_address  = ""  # Optional: peer endpoint address
-peer1_server_port     = -1  # Optional: peer endpoint port
+# Existing peer UUIDs to keep attached to the server
+# wireguard_existing_peer_ids = ["uuid-1", "uuid-2"]
 
-# Peer 2 Configuration
-peer2_public_key      = "peer2-public-key-here"
-peer2_preshared_key   = ""  # Optional
-peer2_allowed_ips     = "10.10.10.3/32"
-peer2_server_address  = ""
-peer2_server_port     = -1
+# Peer tunnel addresses (public keys are managed by the Go application)
+peer1_tunnel_address = "10.10.10.101/32"
+peer2_tunnel_address = "10.10.10.102/32"
+peer3_tunnel_address = "10.10.10.103/32"
 
-# Peer 3 Configuration
-peer3_public_key      = "peer3-public-key-here"
-peer3_preshared_key   = ""  # Optional
-peer3_allowed_ips     = "10.10.10.4/32"
-peer3_server_address  = ""
-peer3_server_port     = -1
+# ── Application Config (optional, defaults are set in variables.tf) ──
+# calendar_id          = "your-calendar@group.calendar.google.com"
+# service_account_path = "/app/config/service-account.json"
+# vsphere_vms          = ["lab-vm-01", "lab-vm-02", "lab-vm-03"]
+# vsphere_users        = ["lab-user1", "lab-user2", "lab-user3"]
+# vsphere_snapshot_name = "main-snapshot"
+# wireguard_server_tunnel_network = "10.10.10.0/24"
+# wireguard_allowed_ips           = ["192.168.1.0/24"]
+# wireguard_client_mtu            = 1380
+# wireguard_keepalive             = 25
