@@ -31,8 +31,10 @@ service-account.json
 .secrets/
 # Task files
 .task
-# Local data directory
-data/
+# Local data directory (root level only, not api/data/)
+/data/
+# Generated config (reproduced by Terraform)
+api/data/user_config.toml
 # Docker volumes
 *.db
 # OPNsense config backups (contain private keys)
