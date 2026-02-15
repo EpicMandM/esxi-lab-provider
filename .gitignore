@@ -21,6 +21,8 @@ go.work
 # Project-specific files
 # Environment with secrets
 .env
+# Compiled Go binary
+api/main
 # Service account credentials
 service-account.json
 **/service-account.json
@@ -33,6 +35,8 @@ service-account.json
 data/
 # Docker volumes
 *.db
+# OPNsense config backups (contain private keys)
+*.xml
 
 
 # npm
