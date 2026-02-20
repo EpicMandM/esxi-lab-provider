@@ -88,17 +88,17 @@ func (o *Orchestrator) LogVMInventory(vms []models.VM) {
 	}
 }
 
-// FetchActiveEvents queries the calendar for events active within ±6 minutes
+// FetchActiveEvents queries the calendar for events active within ±5 minutes
 // of the provided time.
 func (o *Orchestrator) FetchActiveEvents() ([]EventInfo, error) {
 	return o.FetchActiveEventsAt(time.Now())
 }
 
-// FetchActiveEventsAt queries the calendar for events active within ±6 minutes
+// FetchActiveEventsAt queries the calendar for events active within ±5 minutes
 // of the provided time. Exposed for testing with a deterministic clock.
 func (o *Orchestrator) FetchActiveEventsAt(now time.Time) ([]EventInfo, error) {
-	timeMin := now.Add(-6 * time.Minute).Format(time.RFC3339)
-	timeMax := now.Add(6 * time.Minute).Format(time.RFC3339)
+	timeMin := now.Add(-5 * time.Minute).Format(time.RFC3339)
+	timeMax := now.Add(5 * time.Minute).Format(time.RFC3339)
 
 	o.Logger.Info("Fetching calendar events", logger.Action("calendar"), logger.Status("fetching_events"), logger.TimeWindow("±6min"))
 
