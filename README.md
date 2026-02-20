@@ -100,7 +100,7 @@ server_endpoint = "vpn.example.com:51820"
 opnsense_url = "https://opnsense.local"
 auto_register_peers = true
 server_tunnel_network = "172.17.18.0/24"
-allowed_ips = ["172.17.17.0/24", "10.25.25.0/24"]
+allowed_ips = ["172.17.17.0/24"]
 mtu = 1380
 client_addresses = ["172.17.18.101/32", "172.17.18.102/32"]
 keepalive = 0
@@ -206,7 +206,7 @@ The deploy task creates a systemd oneshot service (`esxi-lab-scheduler.service`)
 
 1. **Timer fires** at the top of every hour
 2. **Fetch VM inventory** from ESXi (snapshots per VM)
-3. **Query Google Calendar** for events active within ±6 minutes of now
+3. **Query Google Calendar** for events active within ±5 minutes of now
 4. **Match VMs** — configured user-VM pairs from `[esxi.user_vm_mappings]` first, then fallback to any available inventory VM
 5. **Restore snapshots** — revert to named snapshot or latest, power on
 6. **Rotate ESXi passwords** — new random 16-char password per user via `HostLocalAccountManager`

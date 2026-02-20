@@ -37,7 +37,7 @@ variable "wg_server_tunnel_network" {
 variable "wg_allowed_ips" {
   description = "Additional networks accessible through the WireGuard tunnel"
   type        = list(string)
-  default     = ["172.17.17.0/24", "10.25.25.0/24"]
+  default     = ["172.17.17.0/24"]
 }
 
 variable "wg_client_mtu" {
