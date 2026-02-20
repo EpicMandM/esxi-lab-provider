@@ -1,428 +1,267 @@
 # ESXi Lab Provider
 
-> Automated VMware ESXi lab session scheduler with Google Calendar integration
+Automated VMware ESXi lab scheduler with Google Calendar integration, WireGuard VPN provisioning, and email notifications.
 
-An automated system that syncs Google Calendar events with VMware ESXi lab environments, provisioning and managing virtual machines for scheduled lab sessions. The scheduler runs hourly, automatically powering on VMs, restoring snapshots, and resetting passwords for upcoming sessions.
+Runs on a systemd timer (every hour). When a calendar event is active, the scheduler restores VM snapshots, rotates ESXi user passwords, generates per-user WireGuard configs, registers peers with OPNsense, and emails credentials + VPN config to attendees.
 
-## Features
+## Architecture
 
-- 🗓️ Google Calendar integration for lab session scheduling
-- 🖥️ Automated VM provisioning and snapshot management
-- 🔐 Automatic password generation and rotation
-- ⏱️ Hourly sync with systemd timer
-- 📊 Structured logging with journald integration
-- 🚀 Remote deployment via SSH
+```
+Google Calendar ──▶ Orchestrator ──▶ VMware ESXi  (snapshot restore + password rotation)
+                        │
+                        ├──▶ WireGuard / OPNsense  (key rotation + peer registration)
+                        │
+                        └──▶ Gmail SMTP  (credentials + .conf attachment)
+```
+
+All business logic lives in `internal/orchestrator`. Services (`VMwareClient`, `CalendarClient`, `EmailSender`, `WireGuardManager`) are interfaces defined in `internal/service/interfaces.go`, injected by `cmd/server/main.go`.
 
 ## Prerequisites
 
-- **VS Code** with Dev Containers extension
-- **Docker** (for dev containers)
-- **Google Cloud Project** with billing enabled
-- **VMware ESXi/vSphere** environment access
-- **Remote Linux server** (for deployment, optional)
+- VS Code with Dev Containers extension
+- Docker
+- Google Cloud project with Calendar + Gmail APIs
+- VMware ESXi host
+- OPNsense firewall (for WireGuard, optional)
 
 ## Setup
 
-### 1. Open in Dev Container
-
-This project uses VS Code Dev Containers with all required tools pre-installed:
-- Go 1.25.3+
-- OpenTofu (Terraform alternative)
-- Google Cloud CLI
-- Task (taskfile.dev)
-- Ansible
-- Pre-commit hooks
+### 1. Dev Container
 
 ```bash
-# Open in VS Code
 code .
-
-# VS Code will prompt to "Reopen in Container"
-# Or use Command Palette: "Dev Containers: Reopen in Container"
+# Reopen in Container when prompted
 ```
 
-The dev container includes:
-- Go toolchain
-- OpenTofu for infrastructure provisioning
-- gcloud CLI for Google Cloud authentication
-- Task for running common commands
-- WireGuard tools (for VPN if needed)
+Pre-installed: Go, OpenTofu, gcloud CLI, Task, Ansible, WireGuard tools, pre-commit.
 
-### 2. Authenticate with Google Cloud
+### 2. Google Cloud Auth
 
 ```bash
-# Login to Google Cloud (opens browser)
 gcloud auth login
-
-# Set the project
 gcloud config set project exsi-chat-app-478319
-
-# Enable application default credentials for OpenTofu
 gcloud auth application-default login
 ```
 
-### 3. Provision Google Calendar Service Account
+### 3. Infrastructure Provisioning
 
-Navigate to the Terraform directory and initialize:
+The project uses four independent Terraform modules under `infra/terraform/`:
+
+| Module | Purpose |
+|--------|---------|
+| `gcloud/` | Enables Calendar + Gmail APIs, creates service account, writes `service-account.json` |
+| `esxi-users/` | Creates ESXi local accounts (`lab-user-1..N`), assigns per-VM permissions |
+| `opnsense-wireguard/` | Creates WireGuard peers on OPNsense, outputs server keys + peer addresses |
+| `app-config/` | Reads outputs from the above three and generates `user_config.toml` |
+
+Apply in order:
 
 ```bash
 cd infra/terraform
 
-# Initialize OpenTofu/Terraform
-tofu init
+# 1. Google Cloud service account
+cd gcloud && tofu init && tofu apply && cd ..
 
-# Review the plan
-tofu plan
+# 2. ESXi users + VM mappings
+cd esxi-users && tofu init && tofu apply && cd ..
 
-# Apply the configuration
-tofu apply
+# 3. WireGuard peers on OPNsense
+cd opnsense-wireguard && tofu init && tofu apply && cd ..
+
+# 4. Generate user_config.toml (consumes outputs from all above)
+cd app-config && tofu init && tofu apply && cd ..
 ```
 
-**If service account already exists**, import it into Terraform state:
+### 4. Auto-Generated `user_config.toml`
 
-```bash
-# Import existing service account
-tofu import google_service_account.calendar_sa projects/exsi-chat-app-478319/serviceAccounts/calendar-service-account@exsi-chat-app-478319.iam.gserviceaccount.com
+The `app-config` module renders `user_config.toml` from the template at `infra/terraform/app-config/templates/user_config.toml.tftpl`. It reads remote state from `esxi-users` and `opnsense-wireguard`, plus variables defined in `app-config/variables.tf`.
 
-# Then apply to create the key
-tofu apply
-```
+**Do not edit `user_config.toml` manually** — re-run `tofu apply` in `app-config/` to regenerate.
 
-This will:
-- Enable Google Calendar API
-- Create (or import existing) service account
-- Generate a new service account key
-
-**Extract the service account JSON:**
-
-```bash
-# Save the service account key to a file
-tofu output -raw service_account_key > service-account.json
-
-# Verify the file was created
-cat service-account.json | jq .
-```
-
-⚠️ **Important:** Keep `service-account.json` secure and never commit it to version control (already in `.gitignore`).
-
-### 4. Share Google Calendar with Service Account
-
-1. Go to [Google Calendar](https://calendar.google.com)
-2. Find or create the calendar you want to use for lab bookings
-3. Click the three dots next to the calendar → **Settings and sharing**
-4. Under "Share with specific people", add the service account email:
-   ```bash
-   # Get the service account email
-   tofu output -raw service_account_key | jq -r .client_email
-   ```
-5. Grant **"Make changes to events"** permission
-6. Copy the **Calendar ID** from calendar settings
-
-### 5. Configure Application
-
-#### Create `.env` file in project root:
-
-```bash
-# VMware vSphere/ESXi Configuration
-VCENTER_URL=https://your-vcenter.example.com
-VCENTER_USERNAME=administrator@vsphere.local
-VCENTER_PASSWORD=your-password
-VCENTER_INSECURE=true  # Set to false for production with valid certificates
-
-# SQLite Database Path
-DB_PATH=./scheduler.db
-
-# Optional: Logging Configuration
-LOG_LEVEL=info
-```
-
-#### Edit `api/data/user_config.toml`:
+Generated output (`api/data/user_config.toml`):
 
 ```toml
 [calendar]
-# Your Google Calendar ID from step 4
-calendar_id = "c_xxxxxxxxxxxxx@group.calendar.google.com"
+calendar_id = "c_...@group.calendar.google.com"
+service_account_path = "/app/config/service-account.json"
 
-# Path to service account JSON (for local dev)
-service_account_path = "./infra/terraform/service-account.json"
+[esxi]
+url = "https://esxi.example.com"
+# snapshot_name = "clean-state"  # omitted = use latest
 
-[vsphere]
-# List of VM names available for lab sessions
-vms = [
-    "lab-vm-01",
-    "lab-vm-02",
-    "lab-vm-03"
-]
+[esxi.user_vm_mappings]
+"lab-user-1" = "Pod-1_FortiGate"
+"lab-user-2" = "Pod-2_FortiGate"
 
-# List of VM users for password generation
-users = [
-    "lab-user1",
-    "lab-user2",
-    "lab-user3"
-]
-
-# Optional: Specific snapshot to restore
-# snapshot_name = "clean-state"
+[wireguard]
+enabled = true
+server_public_key = "base64..."
+server_endpoint = "vpn.example.com:51820"
+opnsense_url = "https://opnsense.local"
+auto_register_peers = true
+server_tunnel_network = "172.17.18.0/24"
+allowed_ips = ["172.17.17.0/24", "10.25.25.0/24"]
+mtu = 1380
+client_addresses = ["172.17.18.101/32", "172.17.18.102/32"]
+keepalive = 0
 ```
 
-### 6. Build and Run Locally
+Data sources for each section:
+
+| Config section | Source |
+|----------------|--------|
+| `[calendar]` | `app-config/variables.tf` (`calendar_id`, `service_account_path`) |
+| `[esxi]` | `esxi-users` state (`esxi_url`, `user_vm_mappings`) + `app-config/variables.tf` (`esxi_snapshot_name`) |
+| `[wireguard]` | `opnsense-wireguard` state (`server_public_key`, `server_endpoint`, `opnsense_url`, `peer_tunnel_addresses`) + `app-config/variables.tf` (remaining fields) |
+
+### 5. Share Google Calendar
+
+1. Open [Google Calendar](https://calendar.google.com) → calendar settings → **Share with specific people**
+2. Add the service account email (from `cd infra/terraform/gcloud && tofu output service_account_email`)
+3. Grant **Make changes to events**
+
+### 6. Environment Variables
+
+Copy and fill `api/.env.example`:
 
 ```bash
-# Build the scheduler binary
-task build
-
-# Run once for testing
-./esxi-lab-scheduler
-
-# Check logs
-tail -f scheduler.log
+cp api/.env.example .env
 ```
 
-## Deployment
+```dotenv
+# Required
+ESXI_URL=https://esxi.example.com
+ESXI_USERNAME=root
+ESXI_PASSWORD=secret
+ESXI_INSECURE=true
 
-The scheduler is designed to run on a remote Linux server via systemd timer (hourly execution).
+# Optional: email notifications
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=you@gmail.com
+SMTP_PASSWORD=app-password          # or use SMTP_PASSWORD_FILE
+SMTP_FROM=you@gmail.com
+TEST_EMAIL_ONLY=test@gmail.com      # redirect all emails here (test mode)
 
-### Initial Server Setup (One-Time)
+# Optional: WireGuard peer auto-registration
+OPNSENSE_API_KEY=key
+OPNSENSE_API_SECRET=secret
+OPNSENSE_INSECURE=true              # self-signed OPNsense cert
+```
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ESXI_URL` | Yes | — | ESXi host URL |
+| `ESXI_USERNAME` | Yes | — | ESXi login |
+| `ESXI_PASSWORD` | Yes | — | ESXi password |
+| `ESXI_INSECURE` | No | `false` | Skip TLS verification |
+| `CONFIG_PATH` | No | `./data/user_config.toml` | Path to feature config |
+| `SERVICE_ACCOUNT_PATH` | No | from TOML | Overrides `service_account_path` in config |
+| `SMTP_HOST` | No | `smtp.gmail.com` | SMTP server |
+| `SMTP_PORT` | No | `587` | SMTP port |
+| `SMTP_USERNAME` | No | — | SMTP login |
+| `SMTP_PASSWORD` | No | — | SMTP password |
+| `SMTP_PASSWORD_FILE` | No | — | Read SMTP password from file (overrides `SMTP_PASSWORD`) |
+| `SMTP_FROM` | No | `SMTP_USERNAME` | Sender address |
+| `TEST_EMAIL_ONLY` | No | — | Redirect all emails to this address |
+| `OPNSENSE_API_KEY` | No | — | OPNsense API key |
+| `OPNSENSE_API_SECRET` | No | — | OPNsense API secret |
+| `OPNSENSE_INSECURE` | No | `false` | Skip OPNsense TLS verification |
+
+## Taskfile Commands
+
+All automation is in `Taskfile.yml`. Run `task --list` for the full list.
+
+### Build & Test
 
 ```bash
-# Set deployment credentials
-export DEPLOY_USER=your-username
-export DEPLOY_HOST=your-server-ip
-export DEPLOY_PORT=22
-
-# Generate and upload SSH key
-task ssh-keygen
-
-# Configure passwordless sudo (will ask for password once)
-task setup-sudo
-
-# Configure log retention (7 days)
-task setup-logging
+task build              # CGO_ENABLED=0 GOOS=linux GOARCH=amd64 build
+task test               # go test ./... -count=1
+task test:verbose        # go test ./... -v -count=1
+task test:coverage       # tests + coverage gate (config, logger, orchestrator must be 100%)
 ```
 
-### Deploy Application
+### Deployment (SSH)
+
+Configured via env vars or Taskfile defaults (`DEPLOY_USER=zhukov`, `DEPLOY_HOST=172.17.17.8`, `DEPLOY_PORT=22`).
 
 ```bash
-# Build and deploy to remote server
-task deploy
+task ssh-keygen         # generate + upload SSH key
+task setup-sudo         # passwordless sudo on remote
+task setup-logging      # journald 7-day retention
+
+task deploy             # build → scp binary, .env, user_config.toml, service-account.json
+                        #       → install systemd service + hourly timer
+
+task status             # systemctl status + list-timers
+task logs               # journalctl -n 50 (override: task logs LINES=200)
+task test-run           # trigger one-shot run + tail logs
+task stop               # stop + disable timer
+task clean              # full removal: timer, service, files
 ```
 
-This will:
-1. Build the binary for Linux
-2. Copy binary, `.env`, `user_config.toml`, and `service-account.json` to server
-3. Create systemd service and timer
-4. Enable hourly execution
-
-### Manage Deployment
-
-```bash
-# Check scheduler status
-task status
-
-# View logs (last 50 lines)
-task logs
-
-# View more logs
-task logs LINES=200
-
-# Test run scheduler once
-task test-run
-
-# Stop scheduler
-task stop
-
-# Clean up deployment
-task clean
-```
+The deploy task creates a systemd oneshot service (`esxi-lab-scheduler.service`) triggered by a timer (`esxi-lab-scheduler.timer`) at `*:00:00`. Files are deployed to `/opt/esxi-lab/`.
 
 ## How It Works
 
-1. **Hourly Timer**: Systemd timer triggers the scheduler at the start of every hour
-2. **Fetch Events**: Queries Google Calendar for events starting in the next hour
-3. **VM Matching**: Matches calendar events with available VMs
-4. **Provisioning**:
-   - Powers on VM if off
-   - Restores to specified snapshot (or latest)
-   - Generates random password for VM user
-   - Updates calendar event description with VM info and credentials
-5. **Database**: Tracks bookings in SQLite to avoid duplicate processing
+1. **Timer fires** at the top of every hour
+2. **Fetch VM inventory** from ESXi (snapshots per VM)
+3. **Query Google Calendar** for events active within ±6 minutes of now
+4. **Match VMs** — configured user-VM pairs from `[esxi.user_vm_mappings]` first, then fallback to any available inventory VM
+5. **Restore snapshots** — revert to named snapshot or latest, power on
+6. **Rotate ESXi passwords** — new random 16-char password per user via `HostLocalAccountManager`
+7. **Rotate WireGuard keys** — generate Curve25519 keypair, register public key with OPNsense API, generate client `.conf`
+8. **Email credentials** — send VM name, username, password, and WireGuard `.conf` attachment to the calendar event attendee
 
 ## Project Structure
 
 ```
-.
-├── api/                          # Go application
-│   ├── cmd/server/              # Main entry point
+├── api/
+│   ├── cmd/server/main.go           # Wiring: constructs services, runs orchestrator
 │   ├── internal/
-│   │   ├── config/              # Configuration management
-│   │   ├── logger/              # Structured logging
-│   │   ├── models/              # Data models (VM, Booking)
-│   │   ├── service/             # Business logic
-│   │   │   ├── booking.go       # Booking management
-│   │   │   ├── calendar.go     # Google Calendar integration
-│   │   │   ├── vmware.go        # VMware vSphere integration
-│   │   │   └── password.go     # Password generation
-│   │   └── store/               # SQLite persistence
-│   ├── data/
-│   │   └── user_config.toml     # User configuration
-│   └── go.mod                   # Go dependencies
-│
-├── infra/
-│   └── terraform/               # Infrastructure as Code
-│       └── main.tf              # Google Cloud resources
-│
-├── .devcontainer/               # VS Code dev container config
-├── Taskfile.yml                 # Task automation
-└── README.md                    # This file
+│   │   ├── config/                   # Env-based infra config (ESXi URL/creds)
+│   │   ├── logger/                   # Structured JSON logger
+│   │   ├── models/                   # VM, VMSnapshot, VMListResponse
+│   │   ├── orchestrator/             # All business logic
+│   │   └── service/
+│   │       ├── interfaces.go         # VMwareClient, CalendarClient, EmailSender, WireGuardManager
+│   │       ├── calendar_config.go    # FeatureConfig + TOML loading
+│   │       ├── calendar.go           # Google Calendar API client
+│   │       ├── vmware.go             # govmomi: snapshots, power, password rotation
+│   │       ├── gmail.go              # SMTP + MIME email with attachments
+│   │       ├── password.go           # Crypto-random password generation
+│   │       └── wireguard.go          # Key generation, client config, OPNsense API
+│   ├── .env.example
+│   └── go.mod
+├── infra/terraform/
+│   ├── gcloud/                       # GCP service account + API enablement
+│   ├── esxi-users/                   # ESXi local accounts + per-VM permissions
+│   ├── opnsense-wireguard/           # WireGuard peers on OPNsense
+│   └── app-config/                   # Generates user_config.toml from above states
+│       └── templates/user_config.toml.tftpl
+├── Taskfile.yml
+└── .devcontainer/
 ```
 
 ## Development
 
-### Running Tests
+### Tests
 
 ```bash
-cd api
-go test ./...
-
-# With coverage
-go test -cover ./...
-
-# Specific package
-go test ./internal/config -v
+task test               # all tests
+task test:verbose        # verbose
+task test:coverage       # coverage gate — config, logger, orchestrator must be 100%
 ```
 
-### Available Tasks
+Test files (`*_test.go`) are the specification and must not be modified. Hand-written mocks with function fields are used (no codegen).
+
+### Pre-commit
 
 ```bash
-# List all available tasks
-task --list
-
-# Common tasks:
-task build          # Build the binary
-task deploy         # Deploy to remote server
-task status         # Check deployment status
-task logs           # View remote logs
-task test-run       # Run scheduler once on server
-```
-
-### Pre-commit Hooks
-
-This project uses pre-commit hooks for code quality:
-
-```bash
-# Install hooks
 pre-commit install
-
-# Run manually
 pre-commit run --all-files
 ```
 
-## Configuration Reference
-
-### Environment Variables (`.env`)
-
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `VCENTER_URL` | vSphere/ESXi server URL | Yes | - |
-| `VCENTER_USERNAME` | vSphere username | Yes | - |
-| `VCENTER_PASSWORD` | vSphere password | Yes | - |
-| `VCENTER_INSECURE` | Skip TLS verification | No | `false` |
-| `DB_PATH` | SQLite database path | No | `./scheduler.db` |
-| `LOG_LEVEL` | Logging level | No | `info` |
-| `CONFIG_PATH` | Path to user_config.toml | No | `./api/data/user_config.toml` |
-
-### User Config (`user_config.toml`)
-
-| Section | Key | Description |
-|---------|-----|-------------|
-| `[calendar]` | `calendar_id` | Google Calendar ID |
-| | `service_account_path` | Path to service account JSON |
-| `[vsphere]` | `vms` | List of VM names available for labs |
-| | `users` | List of VM usernames for password resets |
-| | `snapshot_name` | Optional: specific snapshot to restore |
-
-## Troubleshooting
-
-### Service Account Already Exists Error
-
-If you get `Error 409: Service account calendar-service-account already exists`:
-
-```bash
-cd infra/terraform
-
-# Import the existing service account
-tofu import google_service_account.calendar_sa projects/exsi-chat-app-478319/serviceAccounts/calendar-service-account@exsi-chat-app-478319.iam.gserviceaccount.com
-
-# Then apply to create the key
-tofu apply
-```
-
-### Service Account Authentication Fails
-
-```bash
-# Verify service account key format
-cat service-account.json | jq .
-
-# Re-authenticate and regenerate
-cd infra/terraform
-tofu destroy -target=google_service_account_key.calendar_sa_key
-tofu apply
-tofu output -raw service_account_key > service-account.json
-```
-
-### Calendar Events Not Syncing
-
-1. Verify service account has calendar access:
-   - Check calendar sharing settings
-   - Ensure "Make changes to events" permission
-2. Check calendar ID in `user_config.toml` matches
-3. Review logs: `task logs`
-
-### VM Operations Failing
-
-```bash
-# Test vCenter connectivity
-cd api
-go run cmd/server/main.go
-```
-
-Check logs for authentication or permission errors.
-
-### Deployment Issues
-
-```bash
-# Test SSH connection
-ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST
-
-# Check systemd status
-task status
-
-# View detailed logs
-task logs LINES=100
-
-# Manual service restart
-ssh $DEPLOY_USER@$DEPLOY_HOST "sudo systemctl restart esxi-lab-scheduler.timer"
-```
-
-## Security Considerations
-
-- ⚠️ **Never commit** `service-account.json`, `.env`, or credentials
-- 🔒 Use `VCENTER_INSECURE=false` in production
-- 🔑 Rotate service account keys periodically
-- 📝 Use limited vSphere user with only required permissions
-- 🔐 Store `.env` and credentials securely on deployment server
-
 ## License
 
-MIT License - feel free to use, modify, and distribute this project for any purpose.
-
-## Contributing
-
-Contributions are welcome! Feel free to:
-
-- Open issues for bugs or feature requests
-- Submit pull requests with improvements
-- Fork and modify for your own use
-- Share feedback and suggestions
-
-No formal process required - just submit a PR or open an issue.
+MIT
