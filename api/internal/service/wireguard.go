@@ -99,23 +99,23 @@ func (w *WireGuardService) GenerateClientConfig(username string, userIndex int) 
 	var sb strings.Builder
 
 	sb.WriteString("[Interface]\n")
-	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", privateKey))
-	sb.WriteString(fmt.Sprintf("Address = %s\n", w.config.ClientAddresses[userIndex]))
+	fmt.Fprintf(&sb, "PrivateKey = %s\n", privateKey)
+	fmt.Fprintf(&sb, "Address = %s\n", w.config.ClientAddresses[userIndex])
 
 	if w.config.MTU > 0 {
-		sb.WriteString(fmt.Sprintf("MTU = %d\n", w.config.MTU))
+		fmt.Fprintf(&sb, "MTU = %d\n", w.config.MTU)
 	}
 
 	sb.WriteString("\n[Peer]\n")
-	sb.WriteString(fmt.Sprintf("PublicKey = %s\n", w.config.ServerPublicKey))
-	sb.WriteString(fmt.Sprintf("Endpoint = %s\n", w.config.ServerEndpoint))
+	fmt.Fprintf(&sb, "PublicKey = %s\n", w.config.ServerPublicKey)
+	fmt.Fprintf(&sb, "Endpoint = %s\n", w.config.ServerEndpoint)
 
 	if len(w.config.AllowedIPs) > 0 {
-		sb.WriteString(fmt.Sprintf("AllowedIPs = %s\n", strings.Join(w.config.AllowedIPs, ", ")))
+		fmt.Fprintf(&sb, "AllowedIPs = %s\n", strings.Join(w.config.AllowedIPs, ", "))
 	}
 
 	if w.config.Keepalive > 0 {
-		sb.WriteString(fmt.Sprintf("PersistentKeepalive = %d\n", w.config.Keepalive))
+		fmt.Fprintf(&sb, "PersistentKeepalive = %d\n", w.config.Keepalive)
 	}
 
 	return sb.String(), nil

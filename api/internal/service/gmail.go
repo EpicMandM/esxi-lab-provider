@@ -120,15 +120,15 @@ func (s *EmailService) buildMIMEMessage(to, subject, body string, attachment *Em
 	var sb strings.Builder
 
 	// Headers
-	sb.WriteString(fmt.Sprintf("From: %s\r\n", s.from))
-	sb.WriteString(fmt.Sprintf("To: %s\r\n", to))
-	sb.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	fmt.Fprintf(&sb, "From: %s\r\n", s.from)
+	fmt.Fprintf(&sb, "To: %s\r\n", to)
+	fmt.Fprintf(&sb, "Subject: %s\r\n", subject)
 	sb.WriteString("MIME-Version: 1.0\r\n")
-	sb.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
+	fmt.Fprintf(&sb, "Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary)
 	sb.WriteString("\r\n")
 
 	// Body part
-	sb.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	fmt.Fprintf(&sb, "--%s\r\n", boundary)
 	sb.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
 	sb.WriteString("\r\n")
 	sb.WriteString(body)
@@ -136,10 +136,10 @@ func (s *EmailService) buildMIMEMessage(to, subject, body string, attachment *Em
 
 	// Attachment part
 	if attachment != nil {
-		sb.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-		sb.WriteString(fmt.Sprintf("Content-Type: %s; name=\"%s\"\r\n", attachment.MimeType, attachment.Filename))
+		fmt.Fprintf(&sb, "--%s\r\n", boundary)
+		fmt.Fprintf(&sb, "Content-Type: %s; name=\"%s\"\r\n", attachment.MimeType, attachment.Filename)
 		sb.WriteString("Content-Transfer-Encoding: base64\r\n")
-		sb.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n", attachment.Filename))
+		fmt.Fprintf(&sb, "Content-Disposition: attachment; filename=\"%s\"\r\n", attachment.Filename)
 		sb.WriteString("\r\n")
 
 		// Encode content to base64 and add line breaks every 76 characters (RFC 2045)
@@ -155,7 +155,7 @@ func (s *EmailService) buildMIMEMessage(to, subject, body string, attachment *Em
 	}
 
 	// End boundary
-	sb.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+	fmt.Fprintf(&sb, "--%s--\r\n", boundary)
 
 	return sb.String()
 }
