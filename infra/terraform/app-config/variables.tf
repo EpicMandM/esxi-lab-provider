@@ -51,3 +51,9 @@ variable "wg_keepalive" {
   type        = number
   default     = 0
 }
+
+variable "wg_opnsense_insecure" {
+  description = "Skip TLS certificate verification for the OPNsense API (required for self-signed certs on IP addresses)"
+  type        = bool
+  default     = true
+}

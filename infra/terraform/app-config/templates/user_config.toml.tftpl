@@ -22,6 +22,7 @@ enabled = true
 server_public_key = "${wg_server_public_key}"
 server_endpoint = "${wg_server_endpoint}"
 opnsense_url = "${wg_opnsense_url}"
+opnsense_insecure = ${wg_opnsense_insecure}
 auto_register_peers = true
 server_tunnel_network = "${wg_server_tunnel_network}"
 allowed_ips = [${join(", ", formatlist("\"%s\"", wg_allowed_ips))}]
