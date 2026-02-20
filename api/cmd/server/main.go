@@ -95,10 +95,13 @@ func run(log *logger.Logger) error {
 		if apiSecret := os.Getenv("OPNSENSE_API_SECRET"); apiSecret != "" {
 			featureCfg.WireGuard.OPNsenseAPISecret = apiSecret
 		}
+		if v := os.Getenv("OPNSENSE_INSECURE"); v == "true" || v == "1" {
+			featureCfg.WireGuard.OPNsenseInsecure = true
+		}
 
 		var opnsense service.OPNsenseAPI
 		if featureCfg.WireGuard.AutoRegisterPeers && featureCfg.WireGuard.OPNsenseURL != "" && featureCfg.WireGuard.OPNsenseAPIKey != "" {
-			opnsense = service.NewOPNsenseClient(featureCfg.WireGuard.OPNsenseURL, featureCfg.WireGuard.OPNsenseAPIKey, featureCfg.WireGuard.OPNsenseAPISecret, nil)
+			opnsense = service.NewOPNsenseClient(featureCfg.WireGuard.OPNsenseURL, featureCfg.WireGuard.OPNsenseAPIKey, featureCfg.WireGuard.OPNsenseAPISecret, nil, featureCfg.WireGuard.OPNsenseInsecure)
 		}
 		wgSvc := service.NewWireGuardService(&featureCfg.WireGuard, opnsense)
 		if err := wgSvc.ValidateConfig(); err != nil {

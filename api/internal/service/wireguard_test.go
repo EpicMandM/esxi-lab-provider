@@ -597,7 +597,7 @@ func TestOPNsenseClient_SearchPeerByTunnelAddress_Found(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	peer, err := client.SearchPeerByTunnelAddress("172.17.18.101")
 	require.NoError(t, err)
 	require.NotNil(t, peer)
@@ -611,7 +611,7 @@ func TestOPNsenseClient_SearchPeerByTunnelAddress_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	peer, err := client.SearchPeerByTunnelAddress("172.17.18.199")
 	require.NoError(t, err)
 	assert.Nil(t, peer)
@@ -623,7 +623,7 @@ func TestOPNsenseClient_SearchPeerByTunnelAddress_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	_, err := client.SearchPeerByTunnelAddress("172.17.18.101")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "status 500")
@@ -635,7 +635,7 @@ func TestOPNsenseClient_SearchPeerByTunnelAddress_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	_, err := client.SearchPeerByTunnelAddress("172.17.18.101")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to decode")
@@ -662,7 +662,7 @@ func TestOPNsenseClient_UpdatePeer_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.UpdatePeer("uuid-1", "alice", "new-pubkey", "172.17.18.101/32", "srv1")
 	assert.NoError(t, err)
 }
@@ -680,7 +680,7 @@ func TestOPNsenseClient_UpdatePeer_ApplyChangesError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.UpdatePeer("uuid-1", "alice", "pk", "addr", "srv")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "reconfigure")
@@ -705,7 +705,7 @@ func TestOPNsenseClient_CreatePeer_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.CreatePeer("new-peer", "pubkey", "172.17.18.101/32", 25)
 	assert.NoError(t, err)
 }
@@ -728,7 +728,7 @@ func TestOPNsenseClient_CreatePeer_WithoutKeepalive(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.CreatePeer("peer", "pk", "addr", 0)
 	assert.NoError(t, err)
 }
@@ -739,7 +739,7 @@ func TestOPNsenseClient_CreatePeer_ValidationError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.CreatePeer("peer", "bad-pk", "addr", 0)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create peer")
@@ -752,7 +752,7 @@ func TestOPNsenseClient_ApplyChanges_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.applyChanges()
 	assert.NoError(t, err)
 }
@@ -764,49 +764,49 @@ func TestOPNsenseClient_ApplyChanges_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.applyChanges()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "reconfigure returned status 503")
 }
 
 func TestNewOPNsenseClient_DefaultHTTPClient(t *testing.T) {
-	client := NewOPNsenseClient("https://example.com", "key", "secret", nil)
+	client := NewOPNsenseClient("https://example.com", "key", "secret", nil, true)
 	assert.NotNil(t, client.client)
 	assert.Equal(t, "https://example.com", client.baseURL)
 }
 
 func TestNewOPNsenseClient_CustomHTTPClient(t *testing.T) {
 	custom := &http.Client{}
-	client := NewOPNsenseClient("https://example.com", "key", "secret", custom)
+	client := NewOPNsenseClient("https://example.com", "key", "secret", custom, false)
 	assert.Equal(t, custom, client.client)
 }
 
 // --- OPNsenseClient network error tests ---
 
 func TestOPNsenseClient_SearchPeerByTunnelAddress_NetworkError(t *testing.T) {
-	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{})
+	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{}, false)
 	_, err := client.SearchPeerByTunnelAddress("172.17.18.101")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to search peers")
 }
 
 func TestOPNsenseClient_UpdatePeer_NetworkError(t *testing.T) {
-	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{})
+	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{}, false)
 	err := client.UpdatePeer("uuid", "name", "pk", "addr", "srv")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to update peer")
 }
 
 func TestOPNsenseClient_CreatePeer_NetworkError(t *testing.T) {
-	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{})
+	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{}, false)
 	err := client.CreatePeer("name", "pk", "addr", 0)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to send request")
 }
 
 func TestOPNsenseClient_ApplyChanges_NetworkError(t *testing.T) {
-	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{})
+	client := NewOPNsenseClient("http://127.0.0.1:1", "key", "secret", &http.Client{}, false)
 	err := client.applyChanges()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to reconfigure")
@@ -818,7 +818,7 @@ func TestOPNsenseClient_UpdatePeer_MutationError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client())
+	client := NewOPNsenseClient(srv.URL, "key", "secret", srv.Client(), false)
 	err := client.UpdatePeer("uuid-1", "alice", "bad-pk", "addr", "srv")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to update peer uuid-1")

@@ -165,11 +165,13 @@ tasks:
         echo "=== Coverage Gate ==="
         FAIL=0
         for pkg in internal/config internal/logger internal/orchestrator; do
-          pct=$(go tool cover -func=coverage.out | grep "github.com/EpicMandM/esxi-lab-provider/api/${pkg}" | grep 'total' | awk '{print $NF}' | tr -d '%')
+          pct=$(go tool cover -func=coverage.out \
+            | awk -v p="github.com/EpicMandM/esxi-lab-provider/api/${pkg}" '$1 ~ p && /total:/ {gsub(/%/,"",$NF); print $NF}')
           if [ -z "$pct" ]; then
-            pct=$(go test -cover ./$(echo $pkg)/ 2>&1 | grep -oP '[\d.]+(?=%)' | head -1)
+            pct=$(go test -cover ./${pkg}/ 2>&1 \
+              | awk -F'[[:space:]]+|%' '/coverage:/{for(i=1;i<=NF;i++) if($i+0==$i && $i>0){print $i; exit}}')
           fi
-          if [ "$(echo "$pct < 100.0" | bc -l)" = "1" ] 2>/dev/null; then
+          if awk "BEGIN{exit(!($pct+0 < 100.0))}"; then
             echo "FAIL: ${pkg} coverage is ${pct}% (required: 100%)"
             FAIL=1
           else

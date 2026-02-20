@@ -28,10 +28,16 @@ type WireGuardConfig struct {
 	OPNsenseURL       string `toml:"opnsense_url"`
 	OPNsenseAPIKey    string `toml:"-"`
 	OPNsenseAPISecret string `toml:"-"`
+	OPNsenseInsecure  bool   `toml:"opnsense_insecure"`
 	AutoRegisterPeers bool   `toml:"auto_register_peers"`
 }
 
-// WireGuardService manages WireGuard tunnel configurations
+// WireGuardService manages WireGuard tunnel configurations.
+//
+// Security note: private keys are held in plaintext in process memory for the
+// lifetime of the service. Keys are generated on-the-fly and are NOT persisted
+// to disk, so they will be lost if the process restarts (clients must then
+// regenerate). If the process memory is compromised, these keys are exposed.
 type WireGuardService struct {
 	config         *WireGuardConfig
 	privateKeys    map[string]string
@@ -156,12 +162,17 @@ type OPNsenseClient struct {
 }
 
 // NewOPNsenseClient creates a new OPNsense API client.
-// If httpClient is nil, a default client with TLS verification disabled is used.
-func NewOPNsenseClient(url, apiKey, apiSecret string, httpClient *http.Client) *OPNsenseClient {
+//
+// If httpClient is nil a default client is constructed. When insecure is true
+// TLS certificate verification is skipped — this is necessary when the
+// OPNsense appliance uses a self-signed certificate on a private network, but
+// it makes the connection vulnerable to man-in-the-middle attacks. Set
+// insecure to false and use a trusted certificate in production environments.
+func NewOPNsenseClient(url, apiKey, apiSecret string, httpClient *http.Client, insecure bool) *OPNsenseClient {
 	if httpClient == nil {
 		httpClient = &http.Client{
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}, //nolint:gosec // user-controlled flag
 			},
 		}
 	}
