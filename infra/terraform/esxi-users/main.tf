@@ -71,11 +71,19 @@ resource "null_resource" "esxi_role" {
     esxi_password = var.esxi_admin_password
   }
 
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
+  }
+
   provisioner "local-exec" {
     command     = <<-EOT
-      # Remove role if it exists (ignore errors), then create with exact privileges
-      govc role.remove "${var.role_name}" 2>/dev/null || true
-      govc role.create "${var.role_name}" ${join(" ", local.role_privileges)}
+      # Create role, or update if it already exists
+      govc role.create "${var.role_name}" ${join(" ", local.role_privileges)} 2>/dev/null || \
+      govc role.update "${var.role_name}" ${join(" ", local.role_privileges)}
     EOT
     environment = local.govc_env
   }
@@ -109,11 +117,22 @@ resource "null_resource" "esxi_users" {
     esxi_password = var.esxi_admin_password
   }
 
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
+  }
+
   provisioner "local-exec" {
     command     = <<-EOT
-      # Remove user if exists, then create fresh
-      govc host.account.remove -id "${each.key}" 2>/dev/null || true
+      # Create user, or update password if user already exists
       govc host.account.create \
+        -id "${each.key}" \
+        -password "${each.value.password}" \
+        -description "Lab user ${each.value.index} - ${each.value.vm_name} console access" 2>/dev/null || \
+      govc host.account.update \
         -id "${each.key}" \
         -password "${each.value.password}" \
         -description "Lab user ${each.value.index} - ${each.value.vm_name} console access"
@@ -152,6 +171,14 @@ resource "null_resource" "vm_permissions" {
     esxi_url      = var.esxi_url
     esxi_username = var.esxi_admin_username
     esxi_password = var.esxi_admin_password
+  }
+
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
   }
 
   provisioner "local-exec" {
