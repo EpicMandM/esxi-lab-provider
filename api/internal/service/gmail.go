@@ -13,6 +13,7 @@ type EmailService struct {
 	host          string
 	port          string
 	testEmailOnly string // If set, all emails go to this address (for testing)
+	sendMailFn    func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
 }
 
 // EmailAttachment represents a file attachment for an email
@@ -34,6 +35,7 @@ func NewEmailService(smtpHost, smtpPort, username, password, fromEmail, testEmai
 		host:          smtpHost,
 		port:          smtpPort,
 		testEmailOnly: testEmailOnly,
+		sendMailFn:    smtp.SendMail,
 	}, nil
 }
 
@@ -92,7 +94,7 @@ ESXi Lab Provider
 	auth := smtp.PlainAuth("", s.from, s.password, s.host)
 	addr := s.host + ":" + s.port
 
-	err := smtp.SendMail(addr, auth, s.from, []string{actualRecipient}, []byte(message))
+	err := s.sendMailFn(addr, auth, s.from, []string{actualRecipient}, []byte(message))
 	if err != nil {
 		return fmt.Errorf("failed to send email to %s: %w", actualRecipient, err)
 	}

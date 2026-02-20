@@ -33,15 +33,18 @@ type WireGuardConfig struct {
 
 // WireGuardService manages WireGuard tunnel configurations
 type WireGuardService struct {
-	config      *WireGuardConfig
-	privateKeys map[string]string
+	config         *WireGuardConfig
+	privateKeys    map[string]string
+	opnsenseClient OPNsenseAPI
 }
 
-// NewWireGuardService creates a new WireGuard service
-func NewWireGuardService(config *WireGuardConfig) *WireGuardService {
+// NewWireGuardService creates a new WireGuard service.
+// opnsense may be nil when auto-registration is not needed.
+func NewWireGuardService(config *WireGuardConfig, opnsense OPNsenseAPI) *WireGuardService {
 	return &WireGuardService{
-		config:      config,
-		privateKeys: make(map[string]string),
+		config:         config,
+		privateKeys:    make(map[string]string),
+		opnsenseClient: opnsense,
 	}
 }
 
@@ -152,17 +155,21 @@ type OPNsenseClient struct {
 	client    *http.Client
 }
 
-// NewOPNsenseClient creates a new OPNsense API client
-func NewOPNsenseClient(url, apiKey, apiSecret string) *OPNsenseClient {
+// NewOPNsenseClient creates a new OPNsense API client.
+// If httpClient is nil, a default client with TLS verification disabled is used.
+func NewOPNsenseClient(url, apiKey, apiSecret string, httpClient *http.Client) *OPNsenseClient {
+	if httpClient == nil {
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
+	}
 	return &OPNsenseClient{
 		baseURL:   url,
 		apiKey:    apiKey,
 		apiSecret: apiSecret,
-		client: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		},
+		client:    httpClient,
 	}
 }
 
@@ -207,7 +214,7 @@ func (c *OPNsenseClient) SearchPeerByTunnelAddress(tunnelAddress string) (*PeerR
 	if err != nil {
 		return nil, fmt.Errorf("failed to search peers: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("search peers returned status %d", resp.StatusCode)
@@ -263,7 +270,7 @@ func (c *OPNsenseClient) UpdatePeer(uuid, name, publicKey, tunnelAddress, server
 	if err != nil {
 		return fmt.Errorf("failed to update peer: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkMutationResponse(resp); err != nil {
 		return fmt.Errorf("failed to update peer %s: %w", uuid, err)
@@ -307,7 +314,7 @@ func (c *OPNsenseClient) CreatePeer(name, publicKey, tunnelAddress string, keepa
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkMutationResponse(resp); err != nil {
 		return fmt.Errorf("failed to create peer: %w", err)
@@ -371,7 +378,7 @@ func (c *OPNsenseClient) applyChanges() error {
 	if err != nil {
 		return fmt.Errorf("failed to reconfigure: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -389,15 +396,15 @@ func (w *WireGuardService) RegisterPeerWithOPNsense(username string, publicKey s
 		return nil
 	}
 
-	if w.config.OPNsenseURL == "" || w.config.OPNsenseAPIKey == "" {
-		return fmt.Errorf("OPNsense API credentials not configured")
+	if w.opnsenseClient == nil {
+		return fmt.Errorf("OPNsense client not configured")
 	}
 
 	if userIndex < 0 || userIndex >= len(w.config.ClientAddresses) {
 		return fmt.Errorf("invalid user index %d", userIndex)
 	}
 
-	client := NewOPNsenseClient(w.config.OPNsenseURL, w.config.OPNsenseAPIKey, w.config.OPNsenseAPISecret)
+	client := w.opnsenseClient
 	tunnelAddress := w.config.ClientAddresses[userIndex]
 
 	// Search for existing peer by tunnel address (works regardless of current key state)
