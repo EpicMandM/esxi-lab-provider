@@ -28,20 +28,29 @@ type WireGuardConfig struct {
 	OPNsenseURL       string `toml:"opnsense_url"`
 	OPNsenseAPIKey    string `toml:"-"`
 	OPNsenseAPISecret string `toml:"-"`
+	OPNsenseInsecure  bool   `toml:"opnsense_insecure"`
 	AutoRegisterPeers bool   `toml:"auto_register_peers"`
 }
 
-// WireGuardService manages WireGuard tunnel configurations
+// WireGuardService manages WireGuard tunnel configurations.
+//
+// Security note: private keys are held in plaintext in process memory for the
+// lifetime of the service. Keys are generated on-the-fly and are NOT persisted
+// to disk, so they will be lost if the process restarts (clients must then
+// regenerate). If the process memory is compromised, these keys are exposed.
 type WireGuardService struct {
-	config      *WireGuardConfig
-	privateKeys map[string]string
+	config         *WireGuardConfig
+	privateKeys    map[string]string
+	opnsenseClient OPNsenseAPI
 }
 
-// NewWireGuardService creates a new WireGuard service
-func NewWireGuardService(config *WireGuardConfig) *WireGuardService {
+// NewWireGuardService creates a new WireGuard service.
+// opnsense may be nil when auto-registration is not needed.
+func NewWireGuardService(config *WireGuardConfig, opnsense OPNsenseAPI) *WireGuardService {
 	return &WireGuardService{
-		config:      config,
-		privateKeys: make(map[string]string),
+		config:         config,
+		privateKeys:    make(map[string]string),
+		opnsenseClient: opnsense,
 	}
 }
 
@@ -96,23 +105,23 @@ func (w *WireGuardService) GenerateClientConfig(username string, userIndex int) 
 	var sb strings.Builder
 
 	sb.WriteString("[Interface]\n")
-	sb.WriteString(fmt.Sprintf("PrivateKey = %s\n", privateKey))
-	sb.WriteString(fmt.Sprintf("Address = %s\n", w.config.ClientAddresses[userIndex]))
+	fmt.Fprintf(&sb, "PrivateKey = %s\n", privateKey)
+	fmt.Fprintf(&sb, "Address = %s\n", w.config.ClientAddresses[userIndex])
 
 	if w.config.MTU > 0 {
-		sb.WriteString(fmt.Sprintf("MTU = %d\n", w.config.MTU))
+		fmt.Fprintf(&sb, "MTU = %d\n", w.config.MTU)
 	}
 
 	sb.WriteString("\n[Peer]\n")
-	sb.WriteString(fmt.Sprintf("PublicKey = %s\n", w.config.ServerPublicKey))
-	sb.WriteString(fmt.Sprintf("Endpoint = %s\n", w.config.ServerEndpoint))
+	fmt.Fprintf(&sb, "PublicKey = %s\n", w.config.ServerPublicKey)
+	fmt.Fprintf(&sb, "Endpoint = %s\n", w.config.ServerEndpoint)
 
 	if len(w.config.AllowedIPs) > 0 {
-		sb.WriteString(fmt.Sprintf("AllowedIPs = %s\n", strings.Join(w.config.AllowedIPs, ", ")))
+		fmt.Fprintf(&sb, "AllowedIPs = %s\n", strings.Join(w.config.AllowedIPs, ", "))
 	}
 
 	if w.config.Keepalive > 0 {
-		sb.WriteString(fmt.Sprintf("PersistentKeepalive = %d\n", w.config.Keepalive))
+		fmt.Fprintf(&sb, "PersistentKeepalive = %d\n", w.config.Keepalive)
 	}
 
 	return sb.String(), nil
@@ -152,17 +161,26 @@ type OPNsenseClient struct {
 	client    *http.Client
 }
 
-// NewOPNsenseClient creates a new OPNsense API client
-func NewOPNsenseClient(url, apiKey, apiSecret string) *OPNsenseClient {
+// NewOPNsenseClient creates a new OPNsense API client.
+//
+// If httpClient is nil a default client is constructed. When insecure is true
+// TLS certificate verification is skipped — this is necessary when the
+// OPNsense appliance uses a self-signed certificate on a private network, but
+// it makes the connection vulnerable to man-in-the-middle attacks. Set
+// insecure to false and use a trusted certificate in production environments.
+func NewOPNsenseClient(url, apiKey, apiSecret string, httpClient *http.Client, insecure bool) *OPNsenseClient {
+	if httpClient == nil {
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}, //nolint:gosec // user-controlled flag
+			},
+		}
+	}
 	return &OPNsenseClient{
 		baseURL:   url,
 		apiKey:    apiKey,
 		apiSecret: apiSecret,
-		client: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		},
+		client:    httpClient,
 	}
 }
 
@@ -389,15 +407,15 @@ func (w *WireGuardService) RegisterPeerWithOPNsense(username string, publicKey s
 		return nil
 	}
 
-	if w.config.OPNsenseURL == "" || w.config.OPNsenseAPIKey == "" {
-		return fmt.Errorf("OPNsense API credentials not configured")
+	if w.opnsenseClient == nil {
+		return fmt.Errorf("OPNsense client not configured")
 	}
 
 	if userIndex < 0 || userIndex >= len(w.config.ClientAddresses) {
 		return fmt.Errorf("invalid user index %d", userIndex)
 	}
 
-	client := NewOPNsenseClient(w.config.OPNsenseURL, w.config.OPNsenseAPIKey, w.config.OPNsenseAPISecret)
+	client := w.opnsenseClient
 	tunnelAddress := w.config.ClientAddresses[userIndex]
 
 	// Search for existing peer by tunnel address (works regardless of current key state)

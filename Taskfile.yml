@@ -141,3 +141,48 @@ tasks:
     cmds:
       - '{{.SSH}} "sudo systemctl start {{.SERVICE_NAME}}.service"'
       - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 50"'
+
+  test:
+    desc: Run all unit tests
+    dir: api
+    cmds:
+      - go test ./... -count=1
+
+  test:verbose:
+    desc: Run all unit tests with verbose output
+    dir: api
+    cmds:
+      - go test ./... -v -count=1
+
+  test:coverage:
+    desc: Run tests with coverage report and enforce thresholds
+    dir: api
+    cmds:
+      - go test ./... -coverprofile=coverage.out -count=1
+      - go tool cover -func=coverage.out
+      - |
+        echo ""
+        echo "=== Coverage Gate ==="
+        FAIL=0
+        for pkg in internal/config internal/logger internal/orchestrator; do
+          pct=$(go tool cover -func=coverage.out \
+            | awk -v p="github.com/EpicMandM/esxi-lab-provider/api/${pkg}" '$1 ~ p && /total:/ {gsub(/%/,"",$NF); print $NF}')
+          if [ -z "$pct" ]; then
+            pct=$(go test -cover ./${pkg}/ 2>&1 \
+              | awk -F'[[:space:]]+|%' '/coverage:/{for(i=1;i<=NF;i++) if($i+0==$i && $i>0){print $i; exit}}')
+          fi
+          if awk "BEGIN{exit(!($pct+0 < 100.0))}"; then
+            echo "FAIL: ${pkg} coverage is ${pct}% (required: 100%)"
+            FAIL=1
+          else
+            echo "PASS: ${pkg} coverage is ${pct}%"
+          fi
+        done
+        if [ "$FAIL" = "1" ]; then
+          echo ""
+          echo "Coverage gate FAILED. Fix failing packages before committing."
+          exit 1
+        fi
+        echo ""
+        echo "Coverage gate PASSED."
+      - rm -f coverage.out
