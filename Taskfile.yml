@@ -13,11 +13,6 @@ vars:
   SCP: scp -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -P {{.PORT}}
 
 tasks:
-  default:
-    desc: Build the scheduler binary
-    cmds:
-      - task: build
-
   build:
     desc: Build the scheduler binary
     dir: api
