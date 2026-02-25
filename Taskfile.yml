@@ -112,7 +112,7 @@ tasks:
   logs:
     desc: View scheduler logs on remote server
     vars:
-      LINES: '{{.LINES | default "50"}}'
+      LINES: '{{.LINES | default "100"}}'
     cmds:
       - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n {{.LINES}} --no-pager"'
 
@@ -136,7 +136,7 @@ tasks:
     desc: Trigger a single scheduler run on remote server
     cmds:
       - '{{.SSH}} "sudo systemctl start {{.SERVICE_NAME}}.service"'
-      - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 50"'
+      - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 100"'
 
   test:
     desc: Run all unit tests
