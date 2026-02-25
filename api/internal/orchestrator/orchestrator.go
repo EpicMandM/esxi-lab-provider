@@ -164,15 +164,11 @@ func FilterActiveEvents(events []*calendar.Event, now time.Time) []EventInfo {
 	return activeEvents
 }
 
-// SelectVMsToRestore selects which VMs to restore based on configured pairs
-// and optionally falls back to inventory VMs if not enough configured ones exist.
+// SelectVMsToRestore selects which VMs to restore based on configured pairs.
+// Only VMs explicitly listed in user_vm_mappings are considered.
 func (o *Orchestrator) SelectVMsToRestore(vmList *models.VMListResponse, eventCount int) []service.UserVMPair {
 	inventoryVMs := BuildInventoryMap(vmList.VMs)
 	pairs := o.SelectConfiguredVMs(inventoryVMs, eventCount)
-
-	if len(pairs) < eventCount {
-		pairs = o.AddFallbackVMs(pairs, vmList.VMs, eventCount)
-	}
 
 	if len(pairs) < eventCount {
 		o.Logger.Warn("Insufficient VMs available",
@@ -190,36 +186,14 @@ func (o *Orchestrator) SelectConfiguredVMs(inventoryVMs map[string]bool, eventCo
 	var pairs []service.UserVMPair
 
 	for _, p := range o.FeatureCfg.ESXi.UserVMPairs() {
-		if inventoryVMs[p.VM] {
-			pairs = append(pairs, p)
-			if len(pairs) >= eventCount {
-				break
+		var validVMs []string
+		for _, vm := range p.VMs {
+			if inventoryVMs[vm] {
+				validVMs = append(validVMs, vm)
 			}
 		}
-	}
-
-	return pairs
-}
-
-// AddFallbackVMs supplements the configured pairs with unconfigured VMs from
-// the inventory when more VMs are needed.
-func (o *Orchestrator) AddFallbackVMs(existing []service.UserVMPair, inventory []models.VM, eventCount int) []service.UserVMPair {
-	if len(existing) >= eventCount {
-		return existing
-	}
-
-	pairs := existing
-	existingSet := make(map[string]bool)
-
-	for _, p := range existing {
-		existingSet[p.VM] = true
-	}
-
-	for _, vm := range inventory {
-		if !existingSet[vm.Name] {
-			pairs = append(pairs, service.UserVMPair{User: "", VM: vm.Name})
-			o.Logger.Info("Using fallback VM from inventory", logger.VM(vm.Name), logger.Reason("config_vm_not_found"))
-
+		if len(validVMs) > 0 {
+			pairs = append(pairs, service.UserVMPair{User: p.User, VMs: validVMs})
 			if len(pairs) >= eventCount {
 				break
 			}
@@ -238,11 +212,20 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 		snapshotName = *o.FeatureCfg.ESXi.SnapshotName
 	}
 
-	vmsToRestore := make([]string, len(pairs))
-	usersToRotate := make([]string, len(pairs))
-	for i, p := range pairs {
-		vmsToRestore[i] = p.VM
-		usersToRotate[i] = p.User
+	// Build flat VM/user lists for the VMware service.
+	// The first VM per pair is paired with the user for password rotation;
+	// additional VMs per pair use an empty user (snapshot revert only).
+	var vmsToRestore []string
+	var usersForRestore []string
+	for _, p := range pairs {
+		for j, vm := range p.VMs {
+			vmsToRestore = append(vmsToRestore, vm)
+			if j == 0 {
+				usersForRestore = append(usersForRestore, p.User)
+			} else {
+				usersForRestore = append(usersForRestore, "")
+			}
+		}
 	}
 
 	o.Logger.Info("Starting VM restore",
@@ -252,14 +235,15 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 		logger.F("VMS_TO_RESTORE", len(vmsToRestore)),
 		logger.Snapshot(snapshotName))
 
-	restoreErrors, passwords := o.VMware.RestoreVMsWithPasswordRotation(context.Background(), vmsToRestore, usersToRotate, snapshotName)
+	restoreErrors, passwords := o.VMware.RestoreVMsWithPasswordRotation(context.Background(), vmsToRestore, usersForRestore, snapshotName)
 
 	if len(passwords) > 0 {
 		o.Logger.Info("Password rotation completed", logger.Action("password_rotation"), logger.Status("completed"))
 
 		wireguardConfigs := make(map[string]string)
 		if o.WireGuard != nil {
-			for i, username := range usersToRotate {
+			for i, p := range pairs {
+				username := p.User
 				_, pubKey, err := o.WireGuard.RotateUserKey(username)
 				if err != nil {
 					o.Logger.Error("Failed to rotate WireGuard key", logger.User(username), logger.Error(err))
@@ -283,14 +267,15 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 			}
 		}
 
-		for i, username := range usersToRotate {
+		for i, p := range pairs {
+			username := p.User
 			if password, ok := passwords[username]; ok {
 				o.Logger.Info("User password rotated", logger.User(username), logger.Password(password))
 
 				if o.Email != nil && i < len(activeEvents) && activeEvents[i].Email != "" {
 					vmName := ""
-					if i < len(vmsToRestore) {
-						vmName = vmsToRestore[i]
+					if len(p.VMs) > 0 {
+						vmName = p.VMs[0]
 					}
 
 					var attachment *service.EmailAttachment
@@ -344,9 +329,8 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 	return nil
 }
 
-// SelectAllVMs returns UserVMPairs for every VM in the inventory.
-// Configured user-VM mappings are listed first (sorted by username),
-// followed by any remaining inventory VMs without a configured user.
+// SelectAllVMs returns UserVMPairs for configured VMs that exist in the inventory.
+// Only VMs explicitly listed in user_vm_mappings are included.
 func (o *Orchestrator) SelectAllVMs(vmList *models.VMListResponse) []service.UserVMPair {
 	if vmList == nil || len(vmList.VMs) == 0 {
 		return nil
@@ -355,18 +339,17 @@ func (o *Orchestrator) SelectAllVMs(vmList *models.VMListResponse) []service.Use
 	inventoryVMs := BuildInventoryMap(vmList.VMs)
 
 	var pairs []service.UserVMPair
-	usedVMs := make(map[string]bool)
-
 	for _, p := range o.FeatureCfg.ESXi.UserVMPairs() {
-		if inventoryVMs[p.VM] {
-			pairs = append(pairs, p)
-			usedVMs[p.VM] = true
+		var validVMs []string
+		for _, vm := range p.VMs {
+			if inventoryVMs[vm] {
+				validVMs = append(validVMs, vm)
+			} else {
+				o.Logger.Warn("Configured VM not found in inventory", logger.VM(vm), logger.User(p.User))
+			}
 		}
-	}
-
-	for _, vm := range vmList.VMs {
-		if !usedVMs[vm.Name] {
-			pairs = append(pairs, service.UserVMPair{User: "", VM: vm.Name})
+		if len(validVMs) > 0 {
+			pairs = append(pairs, service.UserVMPair{User: p.User, VMs: validVMs})
 		}
 	}
 

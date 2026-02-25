@@ -12,22 +12,22 @@ import (
 func TestESXiConfig_UserVMPairs(t *testing.T) {
 	tests := []struct {
 		name     string
-		mappings map[string]string
+		mappings map[string][]string
 		want     []UserVMPair
 	}{
 		{
 			name:     "sorted by username",
-			mappings: map[string]string{"bob": "vm-bob", "alice": "vm-alice"},
-			want:     []UserVMPair{{User: "alice", VM: "vm-alice"}, {User: "bob", VM: "vm-bob"}},
+			mappings: map[string][]string{"bob": {"vm-bob"}, "alice": {"vm-alice"}},
+			want:     []UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}, {User: "bob", VMs: []string{"vm-bob"}}},
 		},
 		{
 			name:     "single mapping",
-			mappings: map[string]string{"user1": "vm1"},
-			want:     []UserVMPair{{User: "user1", VM: "vm1"}},
+			mappings: map[string][]string{"user1": {"vm1"}},
+			want:     []UserVMPair{{User: "user1", VMs: []string{"vm1"}}},
 		},
 		{
 			name:     "empty mappings",
-			mappings: map[string]string{},
+			mappings: map[string][]string{},
 			want:     []UserVMPair{},
 		},
 		{
@@ -47,27 +47,27 @@ func TestESXiConfig_UserVMPairs(t *testing.T) {
 
 func TestESXiConfig_VMs(t *testing.T) {
 	cfg := &ESXiConfig{
-		UserVMMappings: map[string]string{"bob": "vm-bob", "alice": "vm-alice"},
+		UserVMMappings: map[string][]string{"bob": {"vm-bob"}, "alice": {"vm-alice"}},
 	}
 	vms := cfg.VMs()
 	assert.Equal(t, []string{"vm-alice", "vm-bob"}, vms)
 }
 
 func TestESXiConfig_VMs_Empty(t *testing.T) {
-	cfg := &ESXiConfig{UserVMMappings: map[string]string{}}
+	cfg := &ESXiConfig{UserVMMappings: map[string][]string{}}
 	assert.Empty(t, cfg.VMs())
 }
 
 func TestESXiConfig_Users(t *testing.T) {
 	cfg := &ESXiConfig{
-		UserVMMappings: map[string]string{"bob": "vm-bob", "alice": "vm-alice"},
+		UserVMMappings: map[string][]string{"bob": {"vm-bob"}, "alice": {"vm-alice"}},
 	}
 	users := cfg.Users()
 	assert.Equal(t, []string{"alice", "bob"}, users)
 }
 
 func TestESXiConfig_Users_Empty(t *testing.T) {
-	cfg := &ESXiConfig{UserVMMappings: map[string]string{}}
+	cfg := &ESXiConfig{UserVMMappings: map[string][]string{}}
 	assert.Empty(t, cfg.Users())
 }
 
@@ -81,8 +81,8 @@ service_account_path = "/tmp/sa.json"
 url = "https://esxi.local"
 
 [esxi.user_vm_mappings]
-alice = "vm-alice"
-bob = "vm-bob"
+alice = ["vm-alice"]
+bob = ["vm-bob"]
 
 [wireguard]
 enabled = false
