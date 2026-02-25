@@ -122,7 +122,7 @@ func newTestOrch() (*Orchestrator, *bytes.Buffer) {
 		Calendar: &mockCalendar{},
 		FeatureCfg: &service.FeatureConfig{
 			ESXi: service.ESXiConfig{
-				UserVMMappings: map[string]string{"alice": "vm-alice", "bob": "vm-bob"},
+				UserVMMappings: map[string][]string{"alice": {"vm-alice"}, "bob": {"vm-bob"}},
 			},
 		},
 	}, &buf
@@ -402,42 +402,39 @@ func TestSelectVMsToRestore_AllConfigured(t *testing.T) {
 
 func TestSelectVMsToRestore_WithFallback(t *testing.T) {
 	o, _ := newTestOrch()
-	o.FeatureCfg.ESXi.UserVMMappings = map[string]string{"alice": "vm-alice"}
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{"alice": {"vm-alice"}}
 
 	vmList := &models.VMListResponse{
 		VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-extra"}},
 	}
 
 	pairs := o.SelectVMsToRestore(vmList, 2)
-	assert.Len(t, pairs, 2)
-	assert.Equal(t, "vm-alice", pairs[0].VM)
-	assert.Equal(t, "vm-extra", pairs[1].VM)
-	assert.Equal(t, "", pairs[1].User) // fallback has no user
+	assert.Len(t, pairs, 1)
+	assert.Equal(t, []string{"vm-alice"}, pairs[0].VMs)
 }
 
 func TestSelectVMsToRestore_NoConfiguredVMs(t *testing.T) {
 	o, _ := newTestOrch()
-	o.FeatureCfg.ESXi.UserVMMappings = map[string]string{"alice": "vm-nonexistent"}
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{"alice": {"vm-nonexistent"}}
 
 	vmList := &models.VMListResponse{
 		VMs: []models.VM{{Name: "vm-inventory"}},
 	}
 
 	pairs := o.SelectVMsToRestore(vmList, 1)
-	assert.Len(t, pairs, 1)
-	assert.Equal(t, "vm-inventory", pairs[0].VM)
+	assert.Empty(t, pairs)
 }
 
 func TestSelectVMsToRestore_InsufficientVMs(t *testing.T) {
 	o, buf := newTestOrch()
-	o.FeatureCfg.ESXi.UserVMMappings = map[string]string{}
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{}
 
 	vmList := &models.VMListResponse{
 		VMs: []models.VM{{Name: "vm1"}},
 	}
 
 	pairs := o.SelectVMsToRestore(vmList, 5)
-	assert.Len(t, pairs, 1)
+	assert.Empty(t, pairs)
 	assert.Contains(t, buf.String(), "Insufficient VMs available")
 }
 
@@ -457,28 +454,6 @@ func TestSelectConfiguredVMs_NoneInInventory(t *testing.T) {
 
 	pairs := o.SelectConfiguredVMs(inv, 2)
 	assert.Empty(t, pairs)
-}
-
-// --- AddFallbackVMs tests ---
-
-func TestAddFallbackVMs(t *testing.T) {
-	o, _ := newTestOrch()
-	existing := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
-	inv := []models.VM{{Name: "vm-alice"}, {Name: "vm-extra1"}, {Name: "vm-extra2"}}
-
-	result := o.AddFallbackVMs(existing, inv, 3)
-	assert.Len(t, result, 3)
-	assert.Equal(t, "vm-extra1", result[1].VM)
-	assert.Equal(t, "vm-extra2", result[2].VM)
-}
-
-func TestAddFallbackVMs_AlreadyEnough(t *testing.T) {
-	o, _ := newTestOrch()
-	existing := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
-	inv := []models.VM{{Name: "vm-alice"}, {Name: "vm-extra"}}
-
-	result := o.AddFallbackVMs(existing, inv, 1)
-	assert.Len(t, result, 1)
 }
 
 // --- FetchActiveEventsAt tests ---
@@ -527,7 +502,7 @@ func TestRestoreVMs_SuccessNoWireGuardNoEmail(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "Session", Email: "a@example.com"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -547,7 +522,7 @@ func TestRestoreVMs_WithEmailAndWireGuard(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "Session", Email: "alice@example.com"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -567,7 +542,7 @@ func TestRestoreVMs_PartialFailure(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}, {User: "bob", VM: "vm-bob"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}, {User: "bob", VMs: []string{"vm-bob"}}}
 	events := []EventInfo{{Summary: "S1"}, {Summary: "S2"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -583,7 +558,7 @@ func TestRestoreVMs_NoPasswordsRotated(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "S1", Email: "a@ex.com"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -602,7 +577,7 @@ func TestRestoreVMs_SnapshotNameFromConfig(t *testing.T) {
 		},
 	}
 
-	err := o.RestoreVMs([]service.UserVMPair{{User: "a", VM: "v"}}, []EventInfo{{Summary: "S"}})
+	err := o.RestoreVMs([]service.UserVMPair{{User: "a", VMs: []string{"v"}}}, []EventInfo{{Summary: "S"}})
 	assert.NoError(t, err)
 	assert.Contains(t, buf.String(), "clean-state")
 }
@@ -620,7 +595,7 @@ func TestRestoreVMs_WireGuardKeyRotationError(t *testing.T) {
 		},
 	}
 
-	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VM: "vm"}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
+	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VMs: []string{"vm"}}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
 	assert.NoError(t, err)
 	assert.Contains(t, buf.String(), "Failed to rotate WireGuard key")
 }
@@ -638,7 +613,7 @@ func TestRestoreVMs_WireGuardConfigGenError(t *testing.T) {
 		},
 	}
 
-	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VM: "vm"}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
+	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VMs: []string{"vm"}}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
 	assert.NoError(t, err)
 	assert.Contains(t, buf.String(), "Failed to generate WireGuard config")
 }
@@ -656,7 +631,7 @@ func TestRestoreVMs_RegisterPeerError(t *testing.T) {
 		},
 	}
 
-	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VM: "vm"}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
+	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VMs: []string{"vm"}}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
 	assert.NoError(t, err)
 	assert.Contains(t, buf.String(), "Failed to register peer with OPNsense")
 }
@@ -670,7 +645,7 @@ func TestRestoreVMs_EmailError(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "S", Email: "a@ex.com"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -688,7 +663,7 @@ func TestRestoreVMs_NoEmailForEvent(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "S", Email: ""}} // no email
 
 	err := o.RestoreVMs(pairs, events)
@@ -706,7 +681,7 @@ func TestRestoreVMs_PasswordNotInMap(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "S", Email: "alice@ex.com"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -725,7 +700,7 @@ func TestRestoreVMs_EmailWithoutWireGuard(t *testing.T) {
 		},
 	}
 
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{{Summary: "S", Email: "alice@ex.com"}}
 
 	err := o.RestoreVMs(pairs, events)
@@ -756,7 +731,7 @@ func TestRun_NoActiveEvents(t *testing.T) {
 
 func TestRun_NoVMsAvailable(t *testing.T) {
 	o, _ := newTestOrch()
-	o.FeatureCfg.ESXi.UserVMMappings = map[string]string{}
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{}
 	o.VMware = &mockVMware{
 		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
 			return &models.VMListResponse{VMs: nil}, nil
@@ -864,6 +839,29 @@ func TestRun_CloseError(t *testing.T) {
 	assert.Contains(t, buf.String(), "Failed to close VMware service")
 }
 
+func TestRestoreVMs_MultipleVMsPerPair(t *testing.T) {
+	o, buf := newTestOrch()
+	var capturedVMs []string
+	var capturedUsers []string
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			capturedVMs = vms
+			capturedUsers = users
+			return nil, map[string]string{"alice": "pw"}
+		},
+	}
+
+	// alice has two VMs: primary FortiGate + secondary Client
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-fg", "vm-client"}}}
+	events := []EventInfo{{Summary: "S", Email: "alice@ex.com"}}
+
+	err := o.RestoreVMs(pairs, events)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"vm-fg", "vm-client"}, capturedVMs)
+	assert.Equal(t, []string{"alice", ""}, capturedUsers) // only first VM gets user
+	assert.Contains(t, buf.String(), "Restore completed successfully")
+}
+
 func TestRestoreVMs_MoreEventsThanPairs(t *testing.T) {
 	email := &mockEmail{}
 	o, _ := newTestOrch()
@@ -875,7 +873,7 @@ func TestRestoreVMs_MoreEventsThanPairs(t *testing.T) {
 	}
 
 	// 1 pair but 2 events
-	pairs := []service.UserVMPair{{User: "alice", VM: "vm-alice"}}
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
 	events := []EventInfo{
 		{Summary: "S1", Email: "a@ex.com"},
 		{Summary: "S2", Email: "b@ex.com"},
@@ -885,4 +883,88 @@ func TestRestoreVMs_MoreEventsThanPairs(t *testing.T) {
 	assert.NoError(t, err)
 	require.Len(t, email.calls, 1)
 	assert.Equal(t, "a@ex.com", email.calls[0].to)
+}
+
+// --- SelectAllVMs tests ---
+
+func TestSelectAllVMs_ConfiguredAndUnconfigured(t *testing.T) {
+	o, _ := newTestOrch()
+	// UserVMMappings: alice→vm-alice, bob→vm-bob
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}, {Name: "vm-extra"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 2)
+	// Only configured pairs (sorted by user), unconfigured VMs excluded
+	assert.Equal(t, "alice", pairs[0].User)
+	assert.Equal(t, []string{"vm-alice"}, pairs[0].VMs)
+	assert.Equal(t, "bob", pairs[1].User)
+	assert.Equal(t, []string{"vm-bob"}, pairs[1].VMs)
+}
+
+func TestSelectAllVMs_OnlyConfigured(t *testing.T) {
+	o, _ := newTestOrch()
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 2)
+	assert.Equal(t, "alice", pairs[0].User)
+	assert.Equal(t, "bob", pairs[1].User)
+}
+
+func TestSelectAllVMs_OnlyUnconfigured(t *testing.T) {
+	o, _ := newTestOrch()
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{}
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-x"}, {Name: "vm-y"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	assert.Empty(t, pairs)
+}
+
+func TestSelectAllVMs_NilVMList(t *testing.T) {
+	o, _ := newTestOrch()
+	pairs := o.SelectAllVMs(nil)
+	assert.Nil(t, pairs)
+}
+
+func TestSelectAllVMs_EmptyVMs(t *testing.T) {
+	o, _ := newTestOrch()
+	vmList := &models.VMListResponse{VMs: nil}
+	pairs := o.SelectAllVMs(vmList)
+	assert.Nil(t, pairs)
+}
+
+func TestSelectAllVMs_ConfiguredVMNotInInventory(t *testing.T) {
+	o, _ := newTestOrch()
+	// Configured VMs are vm-alice, vm-bob but neither is in inventory
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-other"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	assert.Empty(t, pairs)
+}
+
+func TestRun_NoVMsAndNoEvents(t *testing.T) {
+	o, buf := newTestOrch()
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{}
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{VMs: nil}, nil
+		},
+	}
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			return nil, nil
+		},
+	}
+
+	err := o.Run()
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "No active calendar events")
 }

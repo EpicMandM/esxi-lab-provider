@@ -37,7 +37,7 @@ variable "wg_server_tunnel_network" {
 variable "wg_allowed_ips" {
   description = "Additional networks accessible through the WireGuard tunnel"
   type        = list(string)
-  default     = ["172.17.17.0/24", "10.25.25.0/24"]
+  default     = ["172.17.17.0/24"]
 }
 
 variable "wg_client_mtu" {
@@ -50,4 +50,10 @@ variable "wg_keepalive" {
   description = "Persistent keepalive interval in seconds (0 to disable)"
   type        = number
   default     = 0
+}
+
+variable "wg_opnsense_insecure" {
+  description = "Skip TLS certificate verification for the OPNsense API (required for self-signed certs on IP addresses)"
+  type        = bool
+  default     = true
 }

@@ -23,9 +23,10 @@ locals {
   # Build user -> VM mapping: lab-user-1 -> Pod-1_FortiGate, etc.
   users = {
     for i in range(1, var.user_count + 1) : "lab-user-${i}" => {
-      index    = i
-      vm_name  = "Pod-${i}_FortiGate"
-      password = random_password.user_passwords[i - 1].result
+      index         = i
+      vm_fortigate  = "Pod-${i}_FortiGate"
+      vm_client_deb = "Pod-${i}_Client_Deb"
+      password      = random_password.user_passwords[i - 1].result
     }
   }
 
@@ -71,11 +72,19 @@ resource "null_resource" "esxi_role" {
     esxi_password = var.esxi_admin_password
   }
 
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
+  }
+
   provisioner "local-exec" {
     command     = <<-EOT
-      # Remove role if it exists (ignore errors), then create with exact privileges
-      govc role.remove "${var.role_name}" 2>/dev/null || true
-      govc role.create "${var.role_name}" ${join(" ", local.role_privileges)}
+      # Create role, or update if it already exists
+      govc role.create "${var.role_name}" ${join(" ", local.role_privileges)} 2>/dev/null || \
+      govc role.update "${var.role_name}" ${join(" ", local.role_privileges)}
     EOT
     environment = local.govc_env
   }
@@ -109,14 +118,25 @@ resource "null_resource" "esxi_users" {
     esxi_password = var.esxi_admin_password
   }
 
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
+  }
+
   provisioner "local-exec" {
     command     = <<-EOT
-      # Remove user if exists, then create fresh
-      govc host.account.remove -id "${each.key}" 2>/dev/null || true
+      # Create user, or update password if user already exists
       govc host.account.create \
         -id "${each.key}" \
         -password "${each.value.password}" \
-        -description "Lab user ${each.value.index} - ${each.value.vm_name} console access"
+        -description "Lab user ${each.value.index} - ${each.value.vm_fortigate} + ${each.value.vm_client_deb} console access" 2>/dev/null || \
+      govc host.account.update \
+        -id "${each.key}" \
+        -password "${each.value.password}" \
+        -description "Lab user ${each.value.index} - ${each.value.vm_fortigate} + ${each.value.vm_client_deb} console access"
     EOT
     environment = local.govc_env
   }
@@ -140,18 +160,26 @@ resource "null_resource" "esxi_users" {
 # ──────────────────────────────────────────────
 # Assign per-VM permissions (user -> VM with role)
 # ──────────────────────────────────────────────
-# Each user gets the "lab-console" role on their specific FortiGate VM only.
+# Each user gets the "lab-console" role on their FortiGate VM and Client_Deb VM (non-propagated).
 
-resource "null_resource" "vm_permissions" {
+resource "null_resource" "fortigate_permissions" {
   for_each = local.users
 
   triggers = {
     username      = each.key
-    vm_name       = each.value.vm_name
+    vm_name       = each.value.vm_fortigate
     role_name     = var.role_name
     esxi_url      = var.esxi_url
     esxi_username = var.esxi_admin_username
     esxi_password = var.esxi_admin_password
+  }
+
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
   }
 
   provisioner "local-exec" {
@@ -160,7 +188,59 @@ resource "null_resource" "vm_permissions" {
         -principal "${each.key}" \
         -role "${var.role_name}" \
         -propagate=false \
-        "/ha-datacenter/vm/${each.value.vm_name}"
+        "/ha-datacenter/vm/${each.value.vm_fortigate}"
+    EOT
+    environment = local.govc_env
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      govc permissions.remove \
+        -principal "${self.triggers.username}" \
+        "/ha-datacenter/vm/${self.triggers.vm_name}" 2>/dev/null || true
+    EOT
+    environment = {
+      GOVC_URL      = self.triggers.esxi_url
+      GOVC_USERNAME = self.triggers.esxi_username
+      GOVC_PASSWORD = self.triggers.esxi_password
+      GOVC_INSECURE = "true"
+    }
+  }
+
+  depends_on = [
+    null_resource.esxi_role,
+    null_resource.esxi_users,
+  ]
+}
+
+resource "null_resource" "client_deb_permissions" {
+  for_each = local.users
+
+  triggers = {
+    username      = each.key
+    vm_name       = each.value.vm_client_deb
+    role_name     = var.role_name
+    esxi_url      = var.esxi_url
+    esxi_username = var.esxi_admin_username
+    esxi_password = var.esxi_admin_password
+  }
+
+  lifecycle {
+    ignore_changes = [
+      triggers["esxi_url"],
+      triggers["esxi_username"],
+      triggers["esxi_password"],
+    ]
+  }
+
+  provisioner "local-exec" {
+    command     = <<-EOT
+      govc permissions.set \
+        -principal "${each.key}" \
+        -role "${var.role_name}" \
+        -propagate=false \
+        "/ha-datacenter/vm/${each.value.vm_client_deb}"
     EOT
     environment = local.govc_env
   }

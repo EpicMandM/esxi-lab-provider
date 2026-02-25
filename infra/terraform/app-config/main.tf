@@ -57,5 +57,6 @@ resource "local_file" "user_config" {
     wg_mtu                   = var.wg_client_mtu
     wg_client_addresses      = data.terraform_remote_state.wireguard.outputs.peer_tunnel_addresses
     wg_keepalive             = var.wg_keepalive
+    wg_opnsense_insecure     = var.wg_opnsense_insecure
   })
 }

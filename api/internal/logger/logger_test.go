@@ -85,7 +85,7 @@ func TestFieldConstructors(t *testing.T) {
 		{"Events", Events(3), "EVENTS"},
 		{"Restored", Restored(4), "RESTORED"},
 		{"Failed", Failed(1), "FAILED"},
-		{"TimeWindow", TimeWindow("±6min"), "TIME_WINDOW"},
+		{"TimeWindow", TimeWindow("±5min"), "TIME_WINDOW"},
 		{"Reason", Reason("because"), "REASON"},
 	}
 	for _, tt := range tests {

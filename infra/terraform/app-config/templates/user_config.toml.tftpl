@@ -14,7 +14,7 @@ snapshot_name = "${esxi_snapshot_name}"
 
 [esxi.user_vm_mappings]
 %{ for user, vm in esxi_user_vm_mappings ~}
-"${user}" = "${vm}"
+"${user}" = ["${vm.fortigate}", "${vm.client_deb}"]
 %{ endfor ~}
 
 [wireguard]
@@ -22,6 +22,7 @@ enabled = true
 server_public_key = "${wg_server_public_key}"
 server_endpoint = "${wg_server_endpoint}"
 opnsense_url = "${wg_opnsense_url}"
+opnsense_insecure = ${wg_opnsense_insecure}
 auto_register_peers = true
 server_tunnel_network = "${wg_server_tunnel_network}"
 allowed_ips = [${join(", ", formatlist("\"%s\"", wg_allowed_ips))}]

@@ -167,16 +167,21 @@ func (s *VMwareService) RestoreVMsWithPasswordRotation(ctx context.Context, vmNa
 		}
 		s.logger.Info("VM restore successful", logger.Action("vm_restore"), logger.Status("success"), logger.VM(vmName))
 
-		// Rotate password for corresponding user if available
+		// Rotate password for corresponding user if available.
+		// An empty username means this VM is revert-only (secondary VM in a
+		// multi-VM pair); skip password rotation entirely.
 		if i < len(userNames) {
 			username := userNames[i]
+			if username == "" {
+				continue
+			}
 			newPassword, err := s.RotateESXiUserPassword(ctx, host, username)
 			if err != nil {
 				s.logger.Error("Password rotation failed", logger.Action("password_rotate"), logger.Status("failed"), logger.User(username), logger.Error(err))
 				errors = append(errors, fmt.Sprintf("failed to rotate password for user %s: %v", username, err))
 			} else {
 				passwords[username] = newPassword
-				s.logger.Info("Password rotation successful", logger.Action("password_rotate"), logger.Status("success"), logger.User(username), logger.VM(vmName))
+				s.logger.Info("Password rotation successful", logger.Action("password_rotate"), logger.Status("success"), logger.User(username))
 			}
 		}
 	}
@@ -217,13 +222,7 @@ func (s *VMwareService) restoreVM(ctx context.Context, vmName, snapshotName stri
 		return fmt.Errorf("revert task failed: %w", err)
 	}
 
-	// Power on VM after restore
-	task, err = vm.PowerOn(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to power on: %w", err)
-	}
-
-	return task.Wait(ctx)
+	return nil
 }
 
 func (s *VMwareService) findSnapshot(ctx context.Context, vm *object.VirtualMachine, name string) (*types.ManagedObjectReference, error) {

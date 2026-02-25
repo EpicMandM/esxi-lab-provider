@@ -9,15 +9,11 @@ vars:
   HOST: '{{.DEPLOY_HOST | default "172.17.17.8"}}'
   PORT: '{{.DEPLOY_PORT | default "22"}}'
   SSH_KEY: '{{.HOME}}/.ssh/id_rsa_esxi_lab'
+  TIMER_INTERVAL_HOURS: '{{.TIMER_INTERVAL_HOURS | default "3"}}'
   SSH: ssh -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -p {{.PORT}} {{.USER}}@{{.HOST}}
   SCP: scp -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -P {{.PORT}}
 
 tasks:
-  default:
-    desc: Build the scheduler binary
-    cmds:
-      - task: build
-
   build:
     desc: Build the scheduler binary
     dir: api
@@ -92,10 +88,10 @@ tasks:
       - |
         {{.SSH}} "sudo tee /etc/systemd/system/{{.SERVICE_NAME}}.timer > /dev/null <<EOF
         [Unit]
-        Description=ESXi Lab Scheduler Timer (runs at the start of every hour)
+        Description=ESXi Lab Scheduler Timer (runs every {{.TIMER_INTERVAL_HOURS}}h from midnight)
 
         [Timer]
-        OnCalendar=*:00:00
+        OnCalendar=*-*-* 0/{{.TIMER_INTERVAL_HOURS}}:00:00
         AccuracySec=1s
         Persistent=false
 
@@ -116,7 +112,7 @@ tasks:
   logs:
     desc: View scheduler logs on remote server
     vars:
-      LINES: '{{.LINES | default "50"}}'
+      LINES: '{{.LINES | default "100"}}'
     cmds:
       - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n {{.LINES}} --no-pager"'
 
@@ -140,7 +136,7 @@ tasks:
     desc: Trigger a single scheduler run on remote server
     cmds:
       - '{{.SSH}} "sudo systemctl start {{.SERVICE_NAME}}.service"'
-      - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 50"'
+      - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 100"'
 
   test:
     desc: Run all unit tests
