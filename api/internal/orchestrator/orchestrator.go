@@ -100,7 +100,7 @@ func (o *Orchestrator) FetchActiveEventsAt(now time.Time) ([]EventInfo, error) {
 	timeMin := now.Add(-5 * time.Minute).Format(time.RFC3339)
 	timeMax := now.Add(5 * time.Minute).Format(time.RFC3339)
 
-	o.Logger.Info("Fetching calendar events", logger.Action("calendar"), logger.Status("fetching_events"), logger.TimeWindow("±6min"))
+	o.Logger.Info("Fetching calendar events", logger.Action("calendar"), logger.Status("fetching_events"), logger.TimeWindow("±5min"))
 
 	events, err := o.Calendar.ListEvents(timeMin, timeMax)
 	if err != nil {
