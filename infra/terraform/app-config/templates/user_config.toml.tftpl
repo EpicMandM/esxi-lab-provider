@@ -14,7 +14,7 @@ snapshot_name = "${esxi_snapshot_name}"
 
 [esxi.user_vm_mappings]
 %{ for user, vm in esxi_user_vm_mappings ~}
-"${user}" = "${vm}"
+"${user}" = ["${vm.fortigate}", "${vm.client_deb}"]
 %{ endfor ~}
 
 [wireguard]
