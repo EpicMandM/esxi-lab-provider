@@ -9,6 +9,7 @@ vars:
   HOST: '{{.DEPLOY_HOST | default "172.17.17.8"}}'
   PORT: '{{.DEPLOY_PORT | default "22"}}'
   SSH_KEY: '{{.HOME}}/.ssh/id_rsa_esxi_lab'
+  TIMER_INTERVAL_HOURS: '{{.TIMER_INTERVAL_HOURS | default "3"}}'
   SSH: ssh -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -p {{.PORT}} {{.USER}}@{{.HOST}}
   SCP: scp -i {{.SSH_KEY}} -o StrictHostKeyChecking=no -P {{.PORT}}
 
@@ -87,10 +88,10 @@ tasks:
       - |
         {{.SSH}} "sudo tee /etc/systemd/system/{{.SERVICE_NAME}}.timer > /dev/null <<EOF
         [Unit]
-        Description=ESXi Lab Scheduler Timer (runs at the start of every hour)
+        Description=ESXi Lab Scheduler Timer (runs every {{.TIMER_INTERVAL_HOURS}}h from midnight)
 
         [Timer]
-        OnCalendar=*:00:00
+        OnCalendar=*-*-* 0/{{.TIMER_INTERVAL_HOURS}}:00:00
         AccuracySec=1s
         Persistent=false
 
