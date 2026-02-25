@@ -886,3 +886,94 @@ func TestRestoreVMs_MoreEventsThanPairs(t *testing.T) {
 	require.Len(t, email.calls, 1)
 	assert.Equal(t, "a@ex.com", email.calls[0].to)
 }
+
+// --- SelectAllVMs tests ---
+
+func TestSelectAllVMs_ConfiguredAndUnconfigured(t *testing.T) {
+	o, _ := newTestOrch()
+	// UserVMMappings: alice→vm-alice, bob→vm-bob
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}, {Name: "vm-extra"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 3)
+	// Configured pairs first (sorted by user)
+	assert.Equal(t, "alice", pairs[0].User)
+	assert.Equal(t, "vm-alice", pairs[0].VM)
+	assert.Equal(t, "bob", pairs[1].User)
+	assert.Equal(t, "vm-bob", pairs[1].VM)
+	// Unconfigured VM last with empty user
+	assert.Equal(t, "", pairs[2].User)
+	assert.Equal(t, "vm-extra", pairs[2].VM)
+}
+
+func TestSelectAllVMs_OnlyConfigured(t *testing.T) {
+	o, _ := newTestOrch()
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 2)
+	assert.Equal(t, "alice", pairs[0].User)
+	assert.Equal(t, "bob", pairs[1].User)
+}
+
+func TestSelectAllVMs_OnlyUnconfigured(t *testing.T) {
+	o, _ := newTestOrch()
+	o.FeatureCfg.ESXi.UserVMMappings = map[string]string{}
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-x"}, {Name: "vm-y"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 2)
+	assert.Equal(t, "", pairs[0].User)
+	assert.Equal(t, "", pairs[1].User)
+}
+
+func TestSelectAllVMs_NilVMList(t *testing.T) {
+	o, _ := newTestOrch()
+	pairs := o.SelectAllVMs(nil)
+	assert.Nil(t, pairs)
+}
+
+func TestSelectAllVMs_EmptyVMs(t *testing.T) {
+	o, _ := newTestOrch()
+	vmList := &models.VMListResponse{VMs: nil}
+	pairs := o.SelectAllVMs(vmList)
+	assert.Nil(t, pairs)
+}
+
+func TestSelectAllVMs_ConfiguredVMNotInInventory(t *testing.T) {
+	o, _ := newTestOrch()
+	// Configured VMs are vm-alice, vm-bob but neither is in inventory
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{{Name: "vm-other"}},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 1)
+	assert.Equal(t, "", pairs[0].User)
+	assert.Equal(t, "vm-other", pairs[0].VM)
+}
+
+func TestRun_NoVMsAndNoEvents(t *testing.T) {
+	o, buf := newTestOrch()
+	o.FeatureCfg.ESXi.UserVMMappings = map[string]string{}
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{VMs: nil}, nil
+		},
+	}
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			return nil, nil
+		},
+	}
+
+	err := o.Run()
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "No active calendar events")
+}

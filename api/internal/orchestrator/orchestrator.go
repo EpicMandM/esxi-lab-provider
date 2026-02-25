@@ -28,7 +28,9 @@ type Orchestrator struct {
 }
 
 // Run executes the full orchestration: fetch inventory → check calendar →
-// select VMs → restore + rotate passwords → send emails.
+// restore all VMs → rotate passwords + send emails for active bookings.
+// Snapshot revert happens on every inventory host every run, regardless
+// of whether a booking exists.
 // Returns an error if any critical step fails.
 func (o *Orchestrator) Run() error {
 	vmList, err := o.FetchVMInventory()
@@ -48,12 +50,14 @@ func (o *Orchestrator) Run() error {
 
 	if len(activeEvents) == 0 {
 		o.Logger.Info("No active calendar events", logger.Action("calendar"), logger.Status("no_active_events"))
-		return nil
 	}
 
-	pairs := o.SelectVMsToRestore(vmList, len(activeEvents))
+	pairs := o.SelectAllVMs(vmList)
 	if len(pairs) == 0 {
-		return fmt.Errorf("no VMs available in inventory")
+		if len(activeEvents) > 0 {
+			return fmt.Errorf("no VMs available in inventory")
+		}
+		return nil
 	}
 
 	return o.RestoreVMs(pairs, activeEvents)
@@ -338,6 +342,35 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 		logger.F("VMS_RESTORED", len(vmsToRestore)),
 		logger.F("PASSWORDS_ROTATED", len(passwords)))
 	return nil
+}
+
+// SelectAllVMs returns UserVMPairs for every VM in the inventory.
+// Configured user-VM mappings are listed first (sorted by username),
+// followed by any remaining inventory VMs without a configured user.
+func (o *Orchestrator) SelectAllVMs(vmList *models.VMListResponse) []service.UserVMPair {
+	if vmList == nil || len(vmList.VMs) == 0 {
+		return nil
+	}
+
+	inventoryVMs := BuildInventoryMap(vmList.VMs)
+
+	var pairs []service.UserVMPair
+	usedVMs := make(map[string]bool)
+
+	for _, p := range o.FeatureCfg.ESXi.UserVMPairs() {
+		if inventoryVMs[p.VM] {
+			pairs = append(pairs, p)
+			usedVMs[p.VM] = true
+		}
+	}
+
+	for _, vm := range vmList.VMs {
+		if !usedVMs[vm.Name] {
+			pairs = append(pairs, service.UserVMPair{User: "", VM: vm.Name})
+		}
+	}
+
+	return pairs
 }
 
 // BuildInventoryMap creates a set of VM names from the inventory for fast lookup.
