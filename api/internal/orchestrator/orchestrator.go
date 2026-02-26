@@ -151,7 +151,7 @@ func FilterActiveEvents(events []*calendar.Event, now time.Time) []EventInfo {
 			}
 
 			if email == "" && event.Summary != "" {
-				email = ExtractEmailFromSummary(event.Summary)
+				email = event.Summary
 			}
 
 			activeEvents = append(activeEvents, EventInfo{
@@ -363,25 +363,4 @@ func BuildInventoryMap(vms []models.VM) map[string]bool {
 		inventoryVMs[vm.Name] = true
 	}
 	return inventoryVMs
-}
-
-// ExtractEmailFromSummary extracts an email from the format "Name (email@domain.com)".
-func ExtractEmailFromSummary(summary string) string {
-	start := -1
-	end := -1
-
-	for i, char := range summary {
-		if char == '(' {
-			start = i + 1
-		} else if char == ')' && start > 0 {
-			end = i
-			break
-		}
-	}
-
-	if start > 0 && end > start {
-		return summary[start:end]
-	}
-
-	return ""
 }
