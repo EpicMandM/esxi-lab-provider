@@ -1,0 +1,41 @@
+name: Renovate
+
+on:
+  # Run every Monday at 03:00 UTC
+  schedule:
+    - cron: '0 3 * * 1'
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      log_level:
+        description: 'Renovate log level'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - debug
+          - info
+          - warn
+  # Re-run whenever the Renovate config or this workflow itself changes
+  push:
+    branches: [main]
+    paths:
+      - .github/renovate.json
+      - .github/workflows/renovate.yml
+
+jobs:
+  renovate:
+    name: Run Renovate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@8d75b92f43899d483728e9a8a7fd44238020f6e6 # v46.1.2
+        with:
+          configurationFile: .github/renovate.json
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          # Set log level: use workflow_dispatch input when triggered manually,
+          # otherwise default to info.
+          LOG_LEVEL: ${{ inputs.log_level || 'info' }}

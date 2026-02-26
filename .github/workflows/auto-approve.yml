@@ -1,0 +1,92 @@
+name: Auto-approve Renovate PRs
+
+# Trigger after the CI workflow completes so approval only happens when
+# all tests and checks have passed.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  auto-approve:
+    name: Approve and enable automerge for Renovate PRs
+    runs-on: ubuntu-latest
+    # Only run when:
+    #   1. CI passed (conclusion == 'success')
+    #   2. The commit was pushed by renovate[bot]
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'renovate[bot]'
+
+    permissions:
+      # Needed to post a pull-request approval review
+      pull-requests: write
+      # Needed to enable automerge (writes to repository merge settings)
+      contents: write
+
+    steps:
+      - name: Find open PR for this workflow run
+        id: find-pr
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const headBranch = context.payload.workflow_run.head_branch;
+            const headSha    = context.payload.workflow_run.head_sha;
+
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              state: 'open',
+              head:  `${context.repo.owner}:${headBranch}`,
+            });
+
+            const pr = prs.find(p => p.head.sha === headSha || p.head.ref === headBranch);
+
+            if (!pr) {
+              core.warning(`No open PR found for branch "${headBranch}" (sha: ${headSha})`);
+              core.setOutput('pr-found', 'false');
+              return;
+            }
+
+            core.info(`Found PR #${pr.number}: ${pr.title}`);
+            core.setOutput('pr-number', String(pr.number));
+            core.setOutput('pr-node-id', pr.node_id);
+            core.setOutput('pr-found',   'true');
+
+      # Approve the PR.
+      # NOTE: GITHUB_TOKEN auto-approval counts as an approving review only when
+      # branch-protection "Require approvals" is NOT set to require a human reviewer.
+      # If you need a separate human-like approval, store a reviewer PAT in
+      # secrets.AUTO_APPROVE_PAT and replace github-token below.
+      - name: Approve PR
+        if: steps.find-pr.outputs.pr-found == 'true'
+        uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363 # v4.0.0
+        with:
+          pull-request-number: ${{ steps.find-pr.outputs.pr-number }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Enable GitHub's built-in automerge (squash).
+      # Requires "Allow auto-merge" to be enabled in the repository settings
+      # (Settings → General → Pull Requests → Allow auto-merge).
+      - name: Enable automerge
+        if: steps.find-pr.outputs.pr-found == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNodeId = '${{ steps.find-pr.outputs.pr-node-id }}';
+
+            await github.graphql(`
+              mutation EnableAutoMerge($pullRequestId: ID!) {
+                enablePullRequestAutoMerge(input: {
+                  pullRequestId: $pullRequestId,
+                  mergeMethod:   SQUASH
+                }) {
+                  pullRequest {
+                    autoMergeRequest { enabledAt }
+                  }
+                }
+              }
+            `, { pullRequestId: prNodeId });
+
+            core.info(`Automerge (squash) enabled for PR #${{ steps.find-pr.outputs.pr-number }}`);
