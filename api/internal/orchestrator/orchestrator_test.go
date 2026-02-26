@@ -143,37 +143,13 @@ func TestBuildInventoryMap_Empty(t *testing.T) {
 	assert.Empty(t, m)
 }
 
-// --- ExtractEmailFromSummary tests ---
-
-func TestExtractEmailFromSummary(t *testing.T) {
-	tests := []struct {
-		name    string
-		summary string
-		want    string
-	}{
-		{"standard format", "John Doe (john@example.com)", "john@example.com"},
-		{"no parens", "John Doe", ""},
-		{"empty parens", "John ()", ""},
-		{"nested parens", "John (foo (bar@baz.com))", "bar@baz.com"},
-		{"only opening", "John (email", ""},
-		{"empty string", "", ""},
-		{"parens at start", "(email@example.com) John", "email@example.com"},
-		{"multiple tokens", "Lab - Student (student@school.edu)", "student@school.edu"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, ExtractEmailFromSummary(tt.summary))
-		})
-	}
-}
-
 // --- FilterActiveEvents tests ---
 
 func TestFilterActiveEvents_ActiveEvent(t *testing.T) {
 	now := time.Date(2025, 6, 15, 14, 0, 0, 0, time.UTC)
 	events := []*calendar.Event{
 		{
-			Summary: "Lab Session (student@example.com)",
+			Summary: "student@example.com",
 			Start:   &calendar.EventDateTime{DateTime: "2025-06-15T13:00:00Z"},
 			End:     &calendar.EventDateTime{DateTime: "2025-06-15T15:00:00Z"},
 		},
@@ -181,7 +157,7 @@ func TestFilterActiveEvents_ActiveEvent(t *testing.T) {
 
 	result := FilterActiveEvents(events, now)
 	require.Len(t, result, 1)
-	assert.Equal(t, "Lab Session (student@example.com)", result[0].Summary)
+	assert.Equal(t, "student@example.com", result[0].Summary)
 	assert.Equal(t, "student@example.com", result[0].Email)
 }
 
@@ -302,7 +278,7 @@ func TestFilterActiveEvents_NoNonOrganizerAttendee(t *testing.T) {
 	now := time.Date(2025, 6, 15, 14, 0, 0, 0, time.UTC)
 	events := []*calendar.Event{
 		{
-			Summary: "Org only (fallback@example.com)",
+			Summary: "fallback@example.com",
 			Start:   &calendar.EventDateTime{DateTime: "2025-06-15T13:00:00Z"},
 			End:     &calendar.EventDateTime{DateTime: "2025-06-15T15:00:00Z"},
 			Attendees: []*calendar.EventAttendee{
@@ -325,7 +301,7 @@ func TestFilterActiveEvents_AttendeeWithEmptyEmail(t *testing.T) {
 	now := time.Date(2025, 6, 15, 14, 0, 0, 0, time.UTC)
 	events := []*calendar.Event{
 		{
-			Summary: "Empty email (summary@example.com)",
+			Summary: "summary@example.com",
 			Start:   &calendar.EventDateTime{DateTime: "2025-06-15T13:00:00Z"},
 			End:     &calendar.EventDateTime{DateTime: "2025-06-15T15:00:00Z"},
 			Attendees: []*calendar.EventAttendee{
@@ -466,7 +442,7 @@ func TestFetchActiveEventsAt_Success(t *testing.T) {
 		listFn: func(min, max string) ([]*calendar.Event, error) {
 			return []*calendar.Event{
 				{
-					Summary: "Active (user@example.com)",
+					Summary: "user@example.com",
 					Start:   &calendar.EventDateTime{DateTime: "2025-06-15T13:00:00Z"},
 					End:     &calendar.EventDateTime{DateTime: "2025-06-15T15:00:00Z"},
 				},
@@ -803,7 +779,7 @@ func TestRun_HappyPath(t *testing.T) {
 		listFn: func(min, max string) ([]*calendar.Event, error) {
 			return []*calendar.Event{
 				{
-					Summary: "Lab (alice@ex.com)",
+					Summary: "alice@ex.com",
 					Start:   &calendar.EventDateTime{DateTime: now.Add(-30 * time.Minute).Format(time.RFC3339)},
 					End:     &calendar.EventDateTime{DateTime: now.Add(30 * time.Minute).Format(time.RFC3339)},
 				},
