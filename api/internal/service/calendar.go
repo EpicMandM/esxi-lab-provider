@@ -18,7 +18,7 @@ func NewCalendarService(ctx context.Context, config CalendarConfig) (*CalendarSe
 		return nil, err
 	}
 
-	srv, err := calendar.NewService(ctx, option.WithCredentialsJSON(tokenJSON))
+	srv, err := calendar.NewService(ctx, option.WithAuthCredentialsJSON(option.ServiceAccount, tokenJSON))
 	if err != nil {
 		return nil, err
 	}
