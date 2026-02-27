@@ -4,6 +4,8 @@
   "timezone": "UTC",
   "labels": ["dependencies"],
   "platformAutomerge": true,
+  "prHourlyLimit": 5,
+  "prConcurrentLimit": 5,
   "packageRules": [
     {
       "description": "Automerge patch and minor updates after CI passes",
