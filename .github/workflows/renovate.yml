@@ -39,8 +39,6 @@ jobs:
           # Tell Renovate which repository to operate on when using a PAT.
           # Without this, Renovate cannot discover repos from a fine-grained token.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
-          # When triggered manually, bypass the schedule so PRs are created immediately.
-          RENOVATE_FORCE: ${{ github.event_name == 'workflow_dispatch' && '{"schedule":[]}' || '' }}
           # Set log level: use workflow_dispatch input when triggered manually,
           # otherwise default to info.
           LOG_LEVEL: ${{ inputs.log_level || 'info' }}
