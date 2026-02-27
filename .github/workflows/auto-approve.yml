@@ -13,10 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     # Only run when:
     #   1. CI passed (conclusion == 'success')
-    #   2. The commit was pushed by renovate[bot]
+    #   2. Triggered by a pull_request event (not a push to main)
+    #   3. The branch is a Renovate branch
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.actor.login == 'renovate[bot]'
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'renovate/')
 
     permissions:
       # Needed to post a pull-request approval review
