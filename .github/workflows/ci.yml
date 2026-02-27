@@ -71,11 +71,27 @@ jobs:
         working-directory: ./api
         run: go test -v ./...
 
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+
   release:
     name: Semantic release
     runs-on: ubuntu-latest
-    # Only release from main branch pushes — tests already ran on the PR
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes]
+    # Only release when api/ files changed on main
+    if: needs.changes.outputs.api == 'true'
 
     permissions:
       contents: write
