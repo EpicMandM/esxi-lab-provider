@@ -15,7 +15,7 @@ vars:
 
 tasks:
   build:
-    desc: Build the scheduler binary
+    desc: Build the scheduler binary from source
     dir: api
     cmds:
       - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../{{.BINARY_NAME}} ./cmd/server/main.go
@@ -23,6 +23,23 @@ tasks:
       - api/**/*.go
     generates:
       - "{{.BINARY_NAME}}"
+
+  download:
+    desc: "Download release binary from GitHub (default: latest; override with VERSION=vX.Y.Z)"
+    vars:
+      VERSION: '{{.VERSION | default "latest"}}'
+    cmds:
+      - |
+        if [ "{{.VERSION}}" = "latest" ]; then
+          echo "Downloading latest release of {{.BINARY_NAME}}..."
+          curl -fsSL -o {{.BINARY_NAME}} \
+            https://github.com/EpicMandM/esxi-lab-provider/releases/latest/download/{{.BINARY_NAME}}
+        else
+          echo "Downloading {{.BINARY_NAME}} {{.VERSION}}..."
+          curl -fsSL -o {{.BINARY_NAME}} \
+            https://github.com/EpicMandM/esxi-lab-provider/releases/download/{{.VERSION}}/{{.BINARY_NAME}}
+        fi
+      - chmod +x {{.BINARY_NAME}}
 
   ssh-keygen:
     desc: Generate SSH key and upload to remote server for passwordless access
@@ -55,8 +72,20 @@ tasks:
       - '{{.SSH}} "sudo systemctl restart systemd-journald"'
 
   deploy:
-    desc: Deploy scheduler to remote server via SSH
+    desc: "Download latest release and deploy to remote server (override release with VERSION=vX.Y.Z)"
+    deps: [download]
+    cmds:
+      - task: _deploy
+
+  deploy:local:
+    desc: Build from source and deploy to remote server
     deps: [build]
+    cmds:
+      - task: _deploy
+
+  _deploy:
+    internal: true
+    desc: Copy binary and config files to remote server and install systemd units
     cmds:
       - echo "Deploying to {{.USER}}@{{.HOST}}:{{.PORT}}"
       - '{{.SSH}} "sudo mkdir -p {{.REMOTE_PATH}} && sudo chown {{.USER}}:{{.USER}} {{.REMOTE_PATH}}"'
