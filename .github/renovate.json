@@ -1,12 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":separatePatchReleases",
-    "group:allNonMajor"
-  ],
+  "extends": ["config:recommended", ":semanticCommits"],
   "timezone": "UTC",
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],
@@ -15,11 +9,8 @@
     {
       "description": "Automerge patch and minor updates after CI passes",
       "matchUpdateTypes": ["minor", "patch", "digest"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
+      "automerge": true
     },
-
     {
       "description": "Group Go direct dependencies",
       "matchManagers": ["gomod"],
@@ -27,45 +18,40 @@
       "groupName": "Go direct dependencies"
     },
     {
-      "description": "Group all Go indirect dependencies",
+      "description": "Group Go indirect dependencies",
       "matchManagers": ["gomod"],
       "matchDepTypes": ["indirect"],
       "groupName": "Go indirect dependencies",
       "automerge": true
     },
     {
-      "description": "Go toolchain (the 'go' directive in go.mod) — update separately, require manual review for major",
+      "description": "Go toolchain directive — update separately",
       "matchManagers": ["gomod"],
       "matchDepTypes": ["golang"],
       "groupName": "Go toolchain"
     },
-
     {
-      "description": "Remap terraform required_version to OpenTofu releases (this repo uses OpenTofu, not Terraform)",
+      "description": "Disable required_version updates — range constraint, not a pinned version",
       "matchManagers": ["terraform"],
       "matchDepTypes": ["required_core_version"],
-      "datasource": "github-releases",
-      "packageName": "opentofu/opentofu",
-      "versioning": "semver",
-      "groupName": "OpenTofu CLI"
+      "enabled": false
     },
     {
-      "description": "Group Terraform provider updates",
+      "description": "Group Terraform provider patch/minor updates",
       "matchManagers": ["terraform"],
       "matchDepTypes": ["provider"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Terraform providers",
       "automerge": true
     },
-
     {
-      "description": "Group all GitHub Actions updates",
+      "description": "Group GitHub Actions updates",
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
       "automerge": true
     },
     {
-      "description": "Group all pre-commit hook updates",
+      "description": "Group pre-commit hook updates",
       "matchManagers": ["pre-commit"],
       "groupName": "pre-commit hooks",
       "automerge": true
@@ -76,44 +62,19 @@
       "groupName": "devcontainer features",
       "automerge": true
     },
-
     {
-      "description": "Require manual review for all major updates",
+      "description": "Require manual review for major updates",
       "matchUpdateTypes": ["major"],
       "automerge": false
     }
   ],
-  "gomod": {
-    "enabled": true
-  },
-  "pre-commit": {
-    "enabled": true
-  },
-  "terraform": {
-    "enabled": true
-  },
-  "devcontainer": {
-    "enabled": true
-  },
-  "github-actions": {
-    "enabled": true
-  },
   "customManagers": [
     {
-      "description": "Update versions stored in env vars annotated with renovate inline comments (e.g. GOLANGCI_LINT_VERSION, TFLINT_VERSION)",
+      "description": "Pinned tool versions in CI annotated with renovate inline comments",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\n\\s+\\w+:\\s*(?<currentValue>v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?)"
-      ],
-      "versioningTemplate": "semver"
-    },
-    {
-      "description": "Update tofu_version input in opentofu/setup-opentofu action — uses a bare semver (no leading v)",
-      "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\n\\s+tofu_version:\\s*(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"
       ],
       "versioningTemplate": "semver"
     }
