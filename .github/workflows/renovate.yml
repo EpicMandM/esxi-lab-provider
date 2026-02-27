@@ -1,9 +1,9 @@
 name: Renovate
 
 on:
-  # Run every Monday at 03:00 UTC
+  # Run every day at 03:00 UTC
   schedule:
-    - cron: '0 3 * * 1'
+    - cron: '0 3 * * *'
   # Allow manual triggering
   workflow_dispatch:
     inputs:
@@ -39,6 +39,8 @@ jobs:
           # Tell Renovate which repository to operate on when using a PAT.
           # Without this, Renovate cannot discover repos from a fine-grained token.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Use the GitHub Actions bot identity to avoid unsigned-commit warnings.
+          RENOVATE_GIT_AUTHOR: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
           # Set log level: use workflow_dispatch input when triggered manually,
           # otherwise default to info.
           LOG_LEVEL: ${{ inputs.log_level || 'info' }}
