@@ -1,6 +1,6 @@
 module github.com/EpicMandM/esxi-lab-provider/api
 
-go 1.25.3
+go 1.26
 
 require (
 	github.com/BurntSushi/toml v1.5.0
