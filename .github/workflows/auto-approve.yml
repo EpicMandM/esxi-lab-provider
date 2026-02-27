@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Find open PR for this workflow run
         id: find-pr
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const headBranch = context.payload.workflow_run.head_branch;
@@ -70,7 +70,7 @@ jobs:
       # (Settings → General → Pull Requests → Allow auto-merge).
       - name: Enable automerge
         if: steps.find-pr.outputs.pr-found == 'true'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
