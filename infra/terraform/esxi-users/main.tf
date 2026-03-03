@@ -21,10 +21,11 @@ locals {
     GOVC_INSECURE = "true"
   }
 
-  # Build user -> VM mapping: lab-user-1 -> Pod-1_FortiGate, etc.
+  # Build user -> VM mapping: lab-user-1 -> Pod-1_ prefix
   users = {
     for i in range(1, var.user_count + 1) : "lab-user-${i}" => {
       index         = i
+      vm_prefix     = "Pod-${i}_"
       vm_fortigate  = "Pod-${i}_FortiGate"
       vm_client_deb = "Pod-${i}_Client_Deb"
       password      = random_password.user_passwords[i - 1].result
@@ -133,11 +134,11 @@ resource "null_resource" "esxi_users" {
       govc host.account.create \
         -id "${each.key}" \
         -password "${each.value.password}" \
-        -description "Lab user ${each.value.index} - ${each.value.vm_fortigate} + ${each.value.vm_client_deb} console access" 2>/dev/null || \
+        -description "Lab user ${each.value.index} - ${each.value.vm_prefix} pod console access" 2>/dev/null || \
       govc host.account.update \
         -id "${each.key}" \
         -password "${each.value.password}" \
-        -description "Lab user ${each.value.index} - ${each.value.vm_fortigate} + ${each.value.vm_client_deb} console access"
+        -description "Lab user ${each.value.index} - ${each.value.vm_prefix} pod console access"
     EOT
     environment = local.govc_env
   }

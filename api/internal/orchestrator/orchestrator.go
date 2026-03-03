@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/logger"
@@ -164,11 +165,10 @@ func FilterActiveEvents(events []*calendar.Event, now time.Time) []EventInfo {
 	return activeEvents
 }
 
-// SelectVMsToRestore selects which VMs to restore based on configured pairs.
-// Only VMs explicitly listed in user_vm_mappings are considered.
+// SelectVMsToRestore selects which VMs to restore based on configured prefix mappings.
+// All inventory VMs whose names start with a configured prefix are included.
 func (o *Orchestrator) SelectVMsToRestore(vmList *models.VMListResponse, eventCount int) []service.UserVMPair {
-	inventoryVMs := BuildInventoryMap(vmList.VMs)
-	pairs := o.SelectConfiguredVMs(inventoryVMs, eventCount)
+	pairs := o.SelectConfiguredVMs(vmList.VMs, eventCount)
 
 	if len(pairs) < eventCount {
 		o.Logger.Warn("Insufficient VMs available",
@@ -180,18 +180,13 @@ func (o *Orchestrator) SelectVMsToRestore(vmList *models.VMListResponse, eventCo
 	return pairs
 }
 
-// SelectConfiguredVMs picks VMs from the configured user-VM mappings that
-// exist in the current inventory.
-func (o *Orchestrator) SelectConfiguredVMs(inventoryVMs map[string]bool, eventCount int) []service.UserVMPair {
+// SelectConfiguredVMs picks all inventory VMs whose names start with any of the
+// configured prefixes for each user, up to eventCount user-VM pairs.
+func (o *Orchestrator) SelectConfiguredVMs(vms []models.VM, eventCount int) []service.UserVMPair {
 	var pairs []service.UserVMPair
 
 	for _, p := range o.FeatureCfg.ESXi.UserVMPairs() {
-		var validVMs []string
-		for _, vm := range p.VMs {
-			if inventoryVMs[vm] {
-				validVMs = append(validVMs, vm)
-			}
-		}
+		validVMs := FindVMsByPrefixes(vms, p.VMs)
 		if len(validVMs) > 0 {
 			pairs = append(pairs, service.UserVMPair{User: p.User, VMs: validVMs})
 			if len(pairs) >= eventCount {
@@ -201,6 +196,21 @@ func (o *Orchestrator) SelectConfiguredVMs(inventoryVMs map[string]bool, eventCo
 	}
 
 	return pairs
+}
+
+// FindVMsByPrefixes returns the names of all VMs from the inventory whose names
+// start with at least one of the given prefixes. Order matches the inventory order.
+func FindVMsByPrefixes(vms []models.VM, prefixes []string) []string {
+	var matched []string
+	for _, vm := range vms {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(vm.Name, prefix) {
+				matched = append(matched, vm.Name)
+				break
+			}
+		}
+	}
+	return matched
 }
 
 // RestoreVMs restores VMs, rotates passwords, generates WireGuard configs,
@@ -329,27 +339,22 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 	return nil
 }
 
-// SelectAllVMs returns UserVMPairs for configured VMs that exist in the inventory.
-// Only VMs explicitly listed in user_vm_mappings are included.
+// SelectAllVMs returns UserVMPairs for all inventory VMs whose names match a
+// configured prefix in user_vm_mappings. All matching VMs per user are included.
 func (o *Orchestrator) SelectAllVMs(vmList *models.VMListResponse) []service.UserVMPair {
 	if vmList == nil || len(vmList.VMs) == 0 {
 		return nil
 	}
 
-	inventoryVMs := BuildInventoryMap(vmList.VMs)
-
 	var pairs []service.UserVMPair
 	for _, p := range o.FeatureCfg.ESXi.UserVMPairs() {
-		var validVMs []string
-		for _, vm := range p.VMs {
-			if inventoryVMs[vm] {
-				validVMs = append(validVMs, vm)
-			} else {
-				o.Logger.Warn("Configured VM not found in inventory", logger.VM(vm), logger.User(p.User))
-			}
-		}
+		validVMs := FindVMsByPrefixes(vmList.VMs, p.VMs)
 		if len(validVMs) > 0 {
 			pairs = append(pairs, service.UserVMPair{User: p.User, VMs: validVMs})
+		} else {
+			for _, prefix := range p.VMs {
+				o.Logger.Warn("No VMs found in inventory for configured prefix", logger.VM(prefix), logger.User(p.User))
+			}
 		}
 	}
 

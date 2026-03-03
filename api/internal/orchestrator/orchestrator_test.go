@@ -122,10 +122,42 @@ func newTestOrch() (*Orchestrator, *bytes.Buffer) {
 		Calendar: &mockCalendar{},
 		FeatureCfg: &service.FeatureConfig{
 			ESXi: service.ESXiConfig{
+				// Prefixes: "vm-alice" matches inventory VM "vm-alice", etc.
 				UserVMMappings: map[string][]string{"alice": {"vm-alice"}, "bob": {"vm-bob"}},
 			},
 		},
 	}, &buf
+}
+
+// --- FindVMsByPrefixes tests ---
+
+func TestFindVMsByPrefixes_MatchesByPrefix(t *testing.T) {
+	vms := []models.VM{{Name: "Pod-1_FortiGate"}, {Name: "Pod-1_Client_Deb"}, {Name: "Pod-2_FortiGate"}}
+	matched := FindVMsByPrefixes(vms, []string{"Pod-1_"})
+	assert.Equal(t, []string{"Pod-1_FortiGate", "Pod-1_Client_Deb"}, matched)
+}
+
+func TestFindVMsByPrefixes_MultipleUserPrefixes(t *testing.T) {
+	vms := []models.VM{{Name: "Pod-1_FortiGate"}, {Name: "Pod-2_Client_Deb"}}
+	matched := FindVMsByPrefixes(vms, []string{"Pod-1_", "Pod-2_"})
+	assert.Equal(t, []string{"Pod-1_FortiGate", "Pod-2_Client_Deb"}, matched)
+}
+
+func TestFindVMsByPrefixes_NoPrefixMatch(t *testing.T) {
+	vms := []models.VM{{Name: "Pod-3_FortiGate"}}
+	matched := FindVMsByPrefixes(vms, []string{"Pod-1_"})
+	assert.Empty(t, matched)
+}
+
+func TestFindVMsByPrefixes_EmptyInventory(t *testing.T) {
+	matched := FindVMsByPrefixes(nil, []string{"Pod-1_"})
+	assert.Empty(t, matched)
+}
+
+func TestFindVMsByPrefixes_EmptyPrefixes(t *testing.T) {
+	vms := []models.VM{{Name: "Pod-1_FortiGate"}}
+	matched := FindVMsByPrefixes(vms, nil)
+	assert.Empty(t, matched)
 }
 
 // --- BuildInventoryMap tests ---
@@ -418,17 +450,17 @@ func TestSelectVMsToRestore_InsufficientVMs(t *testing.T) {
 
 func TestSelectConfiguredVMs(t *testing.T) {
 	o, _ := newTestOrch()
-	inv := map[string]bool{"vm-alice": true, "vm-bob": true}
+	vms := []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}}
 
-	pairs := o.SelectConfiguredVMs(inv, 1)
+	pairs := o.SelectConfiguredVMs(vms, 1)
 	assert.Len(t, pairs, 1)
 }
 
 func TestSelectConfiguredVMs_NoneInInventory(t *testing.T) {
 	o, _ := newTestOrch()
-	inv := map[string]bool{"vm-other": true}
+	vms := []models.VM{{Name: "vm-other"}}
 
-	pairs := o.SelectConfiguredVMs(inv, 2)
+	pairs := o.SelectConfiguredVMs(vms, 2)
 	assert.Empty(t, pairs)
 }
 
@@ -865,7 +897,8 @@ func TestRestoreVMs_MoreEventsThanPairs(t *testing.T) {
 
 func TestSelectAllVMs_ConfiguredAndUnconfigured(t *testing.T) {
 	o, _ := newTestOrch()
-	// UserVMMappings: alice→vm-alice, bob→vm-bob
+	// Prefixes "vm-alice" and "vm-bob" match exact-name inventory VMs;
+	// "vm-extra" has no matching prefix and should be excluded.
 	vmList := &models.VMListResponse{
 		VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}, {Name: "vm-extra"}},
 	}
@@ -877,6 +910,29 @@ func TestSelectAllVMs_ConfiguredAndUnconfigured(t *testing.T) {
 	assert.Equal(t, []string{"vm-alice"}, pairs[0].VMs)
 	assert.Equal(t, "bob", pairs[1].User)
 	assert.Equal(t, []string{"vm-bob"}, pairs[1].VMs)
+}
+
+func TestSelectAllVMs_PrefixMatchesMultipleVMs(t *testing.T) {
+	o, _ := newTestOrch()
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{
+		"alice": {"Pod-1_"},
+		"bob":   {"Pod-2_"},
+	}
+	vmList := &models.VMListResponse{
+		VMs: []models.VM{
+			{Name: "Pod-1_FortiGate"},
+			{Name: "Pod-1_Client_Deb"},
+			{Name: "Pod-2_FortiGate"},
+			{Name: "Pod-2_Client_Deb"},
+		},
+	}
+
+	pairs := o.SelectAllVMs(vmList)
+	require.Len(t, pairs, 2)
+	assert.Equal(t, "alice", pairs[0].User)
+	assert.Equal(t, []string{"Pod-1_FortiGate", "Pod-1_Client_Deb"}, pairs[0].VMs)
+	assert.Equal(t, "bob", pairs[1].User)
+	assert.Equal(t, []string{"Pod-2_FortiGate", "Pod-2_Client_Deb"}, pairs[1].VMs)
 }
 
 func TestSelectAllVMs_OnlyConfigured(t *testing.T) {
