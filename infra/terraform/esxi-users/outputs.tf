@@ -3,10 +3,9 @@ output "user_credentials" {
   sensitive   = true
   value = {
     for name, user in local.users : name => {
-      username      = name
-      password      = user.password
-      vm_fortigate  = user.vm_fortigate
-      vm_client_deb = user.vm_client_deb
+      username  = name
+      password  = user.password
+      vm_prefix = user.vm_prefix
     }
   }
 }
@@ -17,12 +16,9 @@ output "esxi_url" {
 }
 
 output "user_vm_mappings" {
-  description = "Map of lab user names to their assigned VMs"
+  description = "Map of lab user names to their VM prefix (all VMs starting with the prefix belong to that user)"
   value = {
-    for name, user in local.users : name => {
-      fortigate  = user.vm_fortigate
-      client_deb = user.vm_client_deb
-    }
+    for name, user in local.users : name => [user.vm_prefix]
   }
 }
 

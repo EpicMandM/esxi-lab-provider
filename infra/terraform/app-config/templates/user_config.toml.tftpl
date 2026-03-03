@@ -13,8 +13,8 @@ snapshot_name = "${esxi_snapshot_name}"
 %{ endif ~}
 
 [esxi.user_vm_mappings]
-%{ for user, vm in esxi_user_vm_mappings ~}
-"${user}" = ["${vm.fortigate}", "${vm.client_deb}"]
+%{ for user, prefixes in esxi_user_vm_mappings ~}
+"${user}" = [${join(", ", formatlist("\"%s\"", prefixes))}]
 %{ endfor ~}
 
 [wireguard]
