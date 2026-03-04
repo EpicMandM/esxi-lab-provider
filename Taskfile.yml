@@ -25,20 +25,10 @@ tasks:
       - "{{.BINARY_NAME}}"
 
   download:
-    desc: "Download release binary from GitHub (default: latest; override with VERSION=vX.Y.Z)"
-    vars:
-      VERSION: '{{.VERSION | default "latest"}}'
+    desc: Download latest release binary from GitHub
     cmds:
-      - |
-        if [ "{{.VERSION}}" = "latest" ]; then
-          echo "Downloading latest release of {{.BINARY_NAME}}..."
-          curl -fsSL -o {{.BINARY_NAME}} \
-            https://github.com/EpicMandM/esxi-lab-provider/releases/latest/download/{{.BINARY_NAME}}
-        else
-          echo "Downloading {{.BINARY_NAME}} {{.VERSION}}..."
-          curl -fsSL -o {{.BINARY_NAME}} \
-            https://github.com/EpicMandM/esxi-lab-provider/releases/download/{{.VERSION}}/{{.BINARY_NAME}}
-        fi
+      - echo "Downloading latest {{.BINARY_NAME}}..."
+      - curl -fsSL -o {{.BINARY_NAME}} https://github.com/EpicMandM/esxi-lab-provider/releases/latest/download/{{.BINARY_NAME}}
       - chmod +x {{.BINARY_NAME}}
 
   ssh-keygen:

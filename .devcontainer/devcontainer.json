@@ -3,7 +3,6 @@
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
     "features": {
         "ghcr.io/devcontainers/features/go:1": {},
-        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers-extra/features/ansible:2": {},
         "ghcr.io/robbert229/devcontainer-features/opentofu:1": {},
         "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
@@ -11,6 +10,7 @@
         "ghcr.io/devcontainers-extra/features/go-task:1": {}
     },
     "runArgs": [
+        "--network=host",
         "--memory=8g",
         "--cpus=4",
         "--cap-add=NET_ADMIN",
