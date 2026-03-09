@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/config"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/logger"
+	"github.com/EpicMandM/esxi-lab-provider/api/internal/metrics"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/orchestrator"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/service"
 )
@@ -22,6 +24,28 @@ func main() {
 
 func run(log *logger.Logger) error {
 	ctx := context.Background()
+
+	// Initialise OTel metrics (optional — skip gracefully if not configured).
+	var appMetrics *metrics.Metrics
+	meter, shutdownMetrics, err := metrics.InitProvider(ctx)
+	if err != nil {
+		log.Warn("Metrics initialisation failed, continuing without metrics", logger.Error(err))
+	} else {
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if serr := shutdownMetrics(shutdownCtx); serr != nil {
+				log.Warn("Failed to flush metrics on shutdown", logger.Error(serr))
+			}
+		}()
+		appMetrics, err = metrics.New(meter)
+		if err != nil {
+			log.Warn("Failed to create metric instruments, continuing without metrics", logger.Error(err))
+			appMetrics = nil
+		} else {
+			log.Info("Metrics initialized", logger.Status("ready"))
+		}
+	}
 
 	// Load feature config
 	configPath := getEnvOrDefault("CONFIG_PATH", "./data/user_config.toml")
@@ -121,6 +145,7 @@ func run(log *logger.Logger) error {
 		Email:      emailSvc,
 		WireGuard:  wireguardSvc,
 		FeatureCfg: featureCfg,
+		Metrics:    appMetrics,
 	}
 
 	return orch.Run()
