@@ -25,6 +25,15 @@ func main() {
 func run(log *logger.Logger) error {
 	ctx := context.Background()
 
+	// Let the GCP SDK find credentials via the same path used for the calendar service.
+	if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+		if sa := os.Getenv("SERVICE_ACCOUNT_PATH"); sa != "" {
+			if err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", sa); err != nil {
+				log.Warn("Failed to set GOOGLE_APPLICATION_CREDENTIALS environment variable", logger.Error(err))
+			}
+		}
+	}
+
 	// Initialise OTel metrics (optional — skip gracefully if not configured).
 	var appMetrics *metrics.Metrics
 	meter, shutdownMetrics, err := metrics.InitProvider(ctx)
@@ -32,7 +41,7 @@ func run(log *logger.Logger) error {
 		log.Warn("Metrics initialisation failed, continuing without metrics", logger.Error(err))
 	} else {
 		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if serr := shutdownMetrics(shutdownCtx); serr != nil {
 				log.Warn("Failed to flush metrics on shutdown", logger.Error(serr))

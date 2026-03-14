@@ -96,7 +96,7 @@ tasks:
         Environment=CONFIG_PATH={{.REMOTE_PATH}}/user_config.toml
         Environment=SERVICE_ACCOUNT_PATH={{.REMOTE_PATH}}/service-account.json
         EnvironmentFile={{.REMOTE_PATH}}/.env
-        ExecStart={{.REMOTE_PATH}}/{{.BINARY_NAME}}~
+        ExecStart={{.REMOTE_PATH}}/{{.BINARY_NAME}}
         StandardOutput=journal
         StandardError=journal
         SyslogIdentifier={{.SERVICE_NAME}}
