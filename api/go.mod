@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/vmware/govmomi v0.53.0
 	golang.org/x/crypto v0.49.0
-	google.golang.org/api v0.273.0
+	google.golang.org/api v0.273.1
 )
 
 require (
