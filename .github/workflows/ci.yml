@@ -20,7 +20,7 @@ jobs:
           python-version: '3.x'
 
       - name: Set up Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.26'
           cache-dependency-path: api/go.sum
@@ -28,16 +28,16 @@ jobs:
       - name: Install golangci-lint
         env:
           # renovate: datasource=github-releases depName=golangci/golangci-lint
-          GOLANGCI_LINT_VERSION: v2.10.1
+          GOLANGCI_LINT_VERSION: v2.11.4
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin "$GOLANGCI_LINT_VERSION"
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        uses: opentofu/setup-opentofu@fc711fa910b93cba0f3fbecaafc9f42fd0c411cb # v2
         with:
           # renovate: datasource=github-releases depName=opentofu/opentofu
-          tofu_version: 1.11.5
+          tofu_version: 1.11.6
 
       - name: Install tflint
         env:
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Set up Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.26'
           cache-dependency-path: api/go.sum
@@ -79,7 +79,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
         id: filter
         with:
           filters: |
@@ -110,7 +110,7 @@ jobs:
           tag_prefix: v
 
       - name: Set up Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.26'
           cache-dependency-path: api/go.sum
@@ -124,7 +124,7 @@ jobs:
         run: go build -trimpath -ldflags="-s -w -X main.version=${{ steps.tag.outputs.new_tag }}" -o esxi-lab-scheduler ./cmd/server/main.go
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           tag_name: ${{ steps.tag.outputs.new_tag }}
           name: ${{ steps.tag.outputs.new_tag }}

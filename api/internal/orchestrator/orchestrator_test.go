@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/logger"
+	"github.com/EpicMandM/esxi-lab-provider/api/internal/metrics"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/models"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/api/calendar/v3"
 )
 
@@ -127,6 +130,22 @@ func newTestOrch() (*Orchestrator, *bytes.Buffer) {
 			},
 		},
 	}, &buf
+}
+
+// setTestMetrics wires a real OTel meter so metric instrumentation in the orchestrator is exercised.
+func setTestMetrics(t *testing.T, o *Orchestrator) {
+	t.Helper()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewManualReader()))
+	prev := otel.GetMeterProvider()
+	otel.SetMeterProvider(mp)
+	t.Cleanup(func() {
+		otel.SetMeterProvider(prev)
+		_ = mp.Shutdown(context.Background())
+	})
+	meter := mp.Meter("test")
+	m, err := metrics.New(meter)
+	require.NoError(t, err)
+	o.Metrics = m
 }
 
 // --- FindVMsByPrefixes tests ---
@@ -999,4 +1018,261 @@ func TestRun_NoVMsAndNoEvents(t *testing.T) {
 	err := o.Run()
 	assert.NoError(t, err)
 	assert.Contains(t, buf.String(), "No active calendar events")
+}
+
+// --- Metrics instrumentation (same scenarios as above, with *metrics.Metrics set) ---
+
+func TestRun_HappyPath_WithMetrics(t *testing.T) {
+	o, buf := newTestOrch()
+	setTestMetrics(t, o)
+	email := &mockEmail{}
+	o.Email = email
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{
+				VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}},
+			}, nil
+		},
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return nil, map[string]string{"alice": "pw-alice"}
+		},
+	}
+	now := time.Now()
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			return []*calendar.Event{
+				{
+					Summary: "alice@ex.com",
+					Start:   &calendar.EventDateTime{DateTime: now.Add(-30 * time.Minute).Format(time.RFC3339)},
+					End:     &calendar.EventDateTime{DateTime: now.Add(30 * time.Minute).Format(time.RFC3339)},
+				},
+			}, nil
+		},
+	}
+
+	err := o.Run()
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "Restore completed successfully")
+	require.Len(t, email.calls, 1)
+}
+
+func TestRun_FetchVMError_WithMetrics(t *testing.T) {
+	o, _ := newTestOrch()
+	setTestMetrics(t, o)
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return nil, fmt.Errorf("vmware down")
+		},
+	}
+
+	err := o.Run()
+	assert.Error(t, err)
+}
+
+func TestRun_NoVMsAvailable_WithMetrics(t *testing.T) {
+	o, _ := newTestOrch()
+	setTestMetrics(t, o)
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{}
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{VMs: nil}, nil
+		},
+	}
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			now := time.Now()
+			return []*calendar.Event{
+				{
+					Summary: "Active",
+					Start:   &calendar.EventDateTime{DateTime: now.Add(-1 * time.Hour).Format(time.RFC3339)},
+					End:     &calendar.EventDateTime{DateTime: now.Add(1 * time.Hour).Format(time.RFC3339)},
+				},
+			}, nil
+		},
+	}
+
+	err := o.Run()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no VMs available")
+}
+
+func TestRun_NoVMsAndNoEvents_WithMetrics(t *testing.T) {
+	o, buf := newTestOrch()
+	setTestMetrics(t, o)
+	o.FeatureCfg.ESXi.UserVMMappings = map[string][]string{}
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{VMs: nil}, nil
+		},
+	}
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			return nil, nil
+		},
+	}
+
+	err := o.Run()
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "No active calendar events")
+}
+
+func TestRun_CalendarError_WithMetrics(t *testing.T) {
+	o, _ := newTestOrch()
+	setTestMetrics(t, o)
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{VMs: []models.VM{{Name: "vm1"}}}, nil
+		},
+	}
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			return nil, fmt.Errorf("calendar error")
+		},
+	}
+
+	err := o.Run()
+	assert.Error(t, err)
+}
+
+func TestRun_RestorePartialFailure_WithMetrics(t *testing.T) {
+	o, _ := newTestOrch()
+	setTestMetrics(t, o)
+	o.VMware = &mockVMware{
+		listFn: func(ctx context.Context) (*models.VMListResponse, error) {
+			return &models.VMListResponse{
+				VMs: []models.VM{{Name: "vm-alice"}, {Name: "vm-bob"}},
+			}, nil
+		},
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return []string{"vm-alice failed"}, map[string]string{}
+		},
+	}
+	now := time.Now()
+	o.Calendar = &mockCalendar{
+		listFn: func(min, max string) ([]*calendar.Event, error) {
+			return []*calendar.Event{
+				{
+					Summary: "alice@ex.com",
+					Start:   &calendar.EventDateTime{DateTime: now.Add(-30 * time.Minute).Format(time.RFC3339)},
+					End:     &calendar.EventDateTime{DateTime: now.Add(30 * time.Minute).Format(time.RFC3339)},
+				},
+			}, nil
+		},
+	}
+
+	err := o.Run()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "restore partially failed")
+}
+
+func TestRestoreVMs_WithEmailAndWireGuard_WithMetrics(t *testing.T) {
+	email := &mockEmail{}
+	wg := &mockWireGuard{}
+	o, _ := newTestOrch()
+	setTestMetrics(t, o)
+	o.Email = email
+	o.WireGuard = wg
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return nil, map[string]string{"alice": "pw123"}
+		},
+	}
+
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
+	events := []EventInfo{{Summary: "Session", Email: "alice@example.com"}}
+
+	err := o.RestoreVMs(pairs, events)
+	assert.NoError(t, err)
+	require.Len(t, email.calls, 1)
+	assert.NotNil(t, email.calls[0].attachment)
+}
+
+func TestRestoreVMs_PartialFailure_WithMetrics(t *testing.T) {
+	o, _ := newTestOrch()
+	setTestMetrics(t, o)
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return []string{"vm-alice failed"}, map[string]string{"bob": "pw"}
+		},
+	}
+
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}, {User: "bob", VMs: []string{"vm-bob"}}}
+	events := []EventInfo{{Summary: "S1"}, {Summary: "S2"}}
+
+	err := o.RestoreVMs(pairs, events)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "restore partially failed")
+}
+
+func TestRestoreVMs_WireGuardKeyRotationError_WithMetrics(t *testing.T) {
+	o, buf := newTestOrch()
+	setTestMetrics(t, o)
+	o.WireGuard = &mockWireGuard{
+		rotateKeyFn: func(u string) (string, string, error) {
+			return "", "", fmt.Errorf("key gen failed")
+		},
+	}
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return nil, map[string]string{"alice": "pw"}
+		},
+	}
+
+	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VMs: []string{"vm"}}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "Failed to rotate WireGuard key")
+}
+
+func TestRestoreVMs_RegisterPeerError_WithMetrics(t *testing.T) {
+	o, buf := newTestOrch()
+	setTestMetrics(t, o)
+	o.WireGuard = &mockWireGuard{
+		registerPeerFn: func(u, pk string, i int) error {
+			return fmt.Errorf("register failed")
+		},
+	}
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return nil, map[string]string{"alice": "pw"}
+		},
+	}
+
+	err := o.RestoreVMs([]service.UserVMPair{{User: "alice", VMs: []string{"vm"}}}, []EventInfo{{Summary: "S", Email: "a@ex.com"}})
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "Failed to register peer with OPNsense")
+}
+
+func TestRestoreVMs_EmailError_WithMetrics(t *testing.T) {
+	o, buf := newTestOrch()
+	setTestMetrics(t, o)
+	o.Email = &mockEmail{errFn: func() error { return fmt.Errorf("smtp error") }}
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return nil, map[string]string{"alice": "pw"}
+		},
+	}
+
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
+	events := []EventInfo{{Summary: "S", Email: "a@ex.com"}}
+
+	err := o.RestoreVMs(pairs, events)
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "Failed to send password email")
+}
+
+func TestRestoreVMs_NoPasswordsRotated_WithMetrics(t *testing.T) {
+	o, buf := newTestOrch()
+	setTestMetrics(t, o)
+	o.VMware = &mockVMware{
+		restoreFn: func(ctx context.Context, vms, users []string, snap string) ([]string, map[string]string) {
+			return nil, nil
+		},
+	}
+
+	pairs := []service.UserVMPair{{User: "alice", VMs: []string{"vm-alice"}}}
+	events := []EventInfo{{Summary: "S1", Email: "a@ex.com"}}
+
+	err := o.RestoreVMs(pairs, events)
+	assert.NoError(t, err)
+	assert.Contains(t, buf.String(), "Restore completed successfully")
 }
