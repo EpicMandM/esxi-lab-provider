@@ -7,6 +7,11 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+# Default for all jobs; auto-approve needs write access to PRs and merge settings.
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   auto-approve:
     name: Approve and enable automerge for Renovate PRs
@@ -14,17 +19,11 @@ jobs:
     # Only run when:
     #   1. CI passed (conclusion == 'success')
     #   2. Triggered by a pull_request event (not a push to main)
-    #   3. The branch is a Renovate branch
+    #   3. The branch is a Renovate branch (head_branch may be owner:branch or refs/heads/...)
     if: >
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
-      startsWith(github.event.workflow_run.head_branch, 'renovate/')
-
-    permissions:
-      # Needed to post a pull-request approval review
-      pull-requests: write
-      # Needed to enable automerge (writes to repository merge settings)
-      contents: write
+      contains(github.event.workflow_run.head_branch, 'renovate/')
 
     steps:
       - name: Find open PR for this workflow run
@@ -32,8 +31,15 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const headBranch = context.payload.workflow_run.head_branch;
-            const headSha    = context.payload.workflow_run.head_sha;
+            const raw = context.payload.workflow_run.head_branch || '';
+            let headBranch = raw.includes(':')
+              ? raw.slice(raw.indexOf(':') + 1)
+              : raw;
+            if (headBranch.startsWith('refs/heads/')) {
+              headBranch = headBranch.slice('refs/heads/'.length);
+            }
+
+            const headSha = context.payload.workflow_run.head_sha;
 
             const { data: prs } = await github.rest.pulls.list({
               owner: context.repo.owner,
@@ -45,7 +51,7 @@ jobs:
             const pr = prs.find(p => p.head.sha === headSha || p.head.ref === headBranch);
 
             if (!pr) {
-              core.warning(`No open PR found for branch "${headBranch}" (sha: ${headSha})`);
+              core.warning(`No open PR found for branch "${headBranch}" (raw: "${raw}", sha: ${headSha})`);
               core.setOutput('pr-found', 'false');
               return;
             }
@@ -58,31 +64,33 @@ jobs:
       # Approve the PR.
       # NOTE: GITHUB_TOKEN auto-approval counts as an approving review only when
       # branch-protection "Require approvals" is NOT set to require a human reviewer.
-      # If you need a separate human-like approval, store a reviewer PAT in
-      # secrets.AUTO_APPROVE_PAT and replace github-token below.
+      # If GitHub blocks bot approvals, enable Settings → Actions → "Allow GitHub
+      # Actions to create and approve pull requests", or set secrets.AUTO_APPROVE_PAT
+      # (e.g. a PAT from a user allowed to satisfy branch protection / CODEOWNERS).
       - name: Approve PR
         if: steps.find-pr.outputs.pr-found == 'true'
         uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363 # v4.0.0
         with:
           pull-request-number: ${{ steps.find-pr.outputs.pr-number }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.AUTO_APPROVE_PAT || secrets.GITHUB_TOKEN }}
 
-      # Enable GitHub's built-in automerge (squash).
+      # Enable GitHub's built-in automerge using the repository default merge method.
       # Requires "Allow auto-merge" to be enabled in the repository settings
       # (Settings → General → Pull Requests → Allow auto-merge).
       - name: Enable automerge
         if: steps.find-pr.outputs.pr-found == 'true'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.AUTO_APPROVE_PAT || secrets.GITHUB_TOKEN }}
           script: |
             const prNodeId = '${{ steps.find-pr.outputs.pr-node-id }}';
 
+            // Omit mergeMethod so GitHub uses the repository default (avoids failure
+            // when squash merge is disabled but merge commits are allowed).
             await github.graphql(`
               mutation EnableAutoMerge($pullRequestId: ID!) {
                 enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId,
-                  mergeMethod:   SQUASH
+                  pullRequestId: $pullRequestId
                 }) {
                   pullRequest {
                     autoMergeRequest { enabledAt }
@@ -91,4 +99,4 @@ jobs:
               }
             `, { pullRequestId: prNodeId });
 
-            core.info(`Automerge (squash) enabled for PR #${{ steps.find-pr.outputs.pr-number }}`);
+            core.info(`Automerge enabled for PR #${{ steps.find-pr.outputs.pr-number }}`);
