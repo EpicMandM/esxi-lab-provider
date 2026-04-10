@@ -6,7 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/logger"
+	"github.com/EpicMandM/esxi-lab-provider/api/internal/metrics"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/models"
 	"github.com/EpicMandM/esxi-lab-provider/api/internal/service"
 	"google.golang.org/api/calendar/v3"
@@ -26,6 +30,7 @@ type Orchestrator struct {
 	Email      service.EmailSender
 	WireGuard  service.WireGuardManager
 	FeatureCfg *service.FeatureConfig
+	Metrics    *metrics.Metrics
 }
 
 // Run executes the full orchestration: fetch inventory → check calendar →
@@ -34,8 +39,11 @@ type Orchestrator struct {
 // of whether a booking exists.
 // Returns an error if any critical step fails.
 func (o *Orchestrator) Run() error {
+	runStart := time.Now()
+
 	vmList, err := o.FetchVMInventory()
 	if err != nil {
+		o.recordRunOutcome(ctx_background(), time.Since(runStart), "failure")
 		return err
 	}
 	defer func() {
@@ -56,12 +64,33 @@ func (o *Orchestrator) Run() error {
 	pairs := o.SelectAllVMs(vmList)
 	if len(pairs) == 0 {
 		if len(activeEvents) > 0 {
+			o.recordRunOutcome(ctx_background(), time.Since(runStart), "failure")
 			return fmt.Errorf("no VMs available in inventory")
 		}
+		o.recordRunOutcome(ctx_background(), time.Since(runStart), "success")
 		return nil
 	}
 
-	return o.RestoreVMs(pairs, activeEvents)
+	if err := o.RestoreVMs(pairs, activeEvents); err != nil {
+		o.recordRunOutcome(ctx_background(), time.Since(runStart), "failure")
+		return err
+	}
+	o.recordRunOutcome(ctx_background(), time.Since(runStart), "success")
+	return nil
+}
+
+// ctx_background returns a background context for metric recording.
+// Using a dedicated helper avoids importing context in expression position.
+func ctx_background() context.Context { return context.Background() }
+
+// recordRunOutcome records lab.run.duration and lab.run.total.
+func (o *Orchestrator) recordRunOutcome(ctx context.Context, d time.Duration, status string) {
+	if o.Metrics == nil {
+		return
+	}
+	attrs := attribute.NewSet(attribute.String("status", status))
+	o.Metrics.RunDuration.Record(ctx, d.Seconds(), metric.WithAttributeSet(attrs))
+	o.Metrics.RunTotal.Add(ctx, 1, metric.WithAttributeSet(attrs))
 }
 
 // FetchVMInventory fetches the VM snapshot inventory from VMware.
@@ -76,6 +105,10 @@ func (o *Orchestrator) FetchVMInventory() (*models.VMListResponse, error) {
 
 	o.Logger.Info("VM inventory fetched", logger.Action("startup"), logger.Status("vm_inventory"), logger.Count(len(vmList.VMs)))
 	o.LogVMInventory(vmList.VMs)
+
+	if o.Metrics != nil {
+		o.Metrics.VMInventoryTotal.Add(context.Background(), int64(len(vmList.VMs)))
+	}
 
 	return vmList, nil
 }
@@ -107,13 +140,30 @@ func (o *Orchestrator) FetchActiveEventsAt(now time.Time) ([]EventInfo, error) {
 
 	o.Logger.Info("Fetching calendar events", logger.Action("calendar"), logger.Status("fetching_events"), logger.TimeWindow("±5min"))
 
+	calStart := time.Now()
 	events, err := o.Calendar.ListEvents(timeMin, timeMax)
+	calDur := time.Since(calStart)
+
+	if o.Metrics != nil {
+		status := "success"
+		if err != nil {
+			status = "failure"
+		}
+		o.Metrics.CalendarFetchDuration.Record(context.Background(), calDur.Seconds(),
+			metric.WithAttributeSet(attribute.NewSet(attribute.String("status", status))))
+	}
+
 	if err != nil {
 		o.Logger.Error("Failed to fetch calendar events", logger.Error(err))
 		return nil, err
 	}
 
 	activeEvents := FilterActiveEvents(events, now)
+
+	if o.Metrics != nil {
+		o.Metrics.CalendarEventsActive.Add(context.Background(), int64(len(activeEvents)))
+	}
+
 	return activeEvents, nil
 }
 
@@ -247,21 +297,58 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 
 	restoreErrors, passwords := o.VMware.RestoreVMsWithPasswordRotation(context.Background(), vmsToRestore, usersForRestore, snapshotName)
 
+	// Record VM restore outcomes (success = total - failures, failure = len(restoreErrors))
+	if o.Metrics != nil {
+		successCount := int64(len(vmsToRestore) - len(restoreErrors))
+		failCount := int64(len(restoreErrors))
+		if successCount > 0 {
+			o.Metrics.VMRestoreTotal.Add(context.Background(), successCount,
+				metric.WithAttributeSet(attribute.NewSet(attribute.String("status", "success"))))
+		}
+		if failCount > 0 {
+			o.Metrics.VMRestoreTotal.Add(context.Background(), failCount,
+				metric.WithAttributeSet(attribute.NewSet(attribute.String("status", "failure"))))
+		}
+	}
+
 	if len(passwords) > 0 {
 		o.Logger.Info("Password rotation completed", logger.Action("password_rotation"), logger.Status("completed"))
+
+		// Record password rotations (one per entry returned by the VMware service)
+		if o.Metrics != nil {
+			o.Metrics.PasswordRotateTotal.Add(context.Background(), int64(len(passwords)),
+				metric.WithAttributeSet(attribute.NewSet(attribute.String("status", "success"))))
+		}
 
 		wireguardConfigs := make(map[string]string)
 		if o.WireGuard != nil {
 			for i, p := range pairs {
 				username := p.User
 				_, pubKey, err := o.WireGuard.RotateUserKey(username)
+				if o.Metrics != nil {
+					wgKeyStatus := "success"
+					if err != nil {
+						wgKeyStatus = "failure"
+					}
+					o.Metrics.WireGuardKeyRotateTotal.Add(context.Background(), 1,
+						metric.WithAttributeSet(attribute.NewSet(attribute.String("status", wgKeyStatus))))
+				}
 				if err != nil {
 					o.Logger.Error("Failed to rotate WireGuard key", logger.User(username), logger.Error(err))
 					continue
 				}
 
-				if err := o.WireGuard.RegisterPeerWithOPNsense(username, pubKey, i); err != nil {
-					o.Logger.Error("Failed to register peer with OPNsense", logger.User(username), logger.Error(err))
+				regErr := o.WireGuard.RegisterPeerWithOPNsense(username, pubKey, i)
+				if o.Metrics != nil {
+					wgRegStatus := "success"
+					if regErr != nil {
+						wgRegStatus = "failure"
+					}
+					o.Metrics.WireGuardPeerRegTotal.Add(context.Background(), 1,
+						metric.WithAttributeSet(attribute.NewSet(attribute.String("status", wgRegStatus))))
+				}
+				if regErr != nil {
+					o.Logger.Error("Failed to register peer with OPNsense", logger.User(username), logger.Error(regErr))
 				} else {
 					o.Logger.Info("Peer registered with OPNsense", logger.User(username), logger.F("PUBLIC_KEY", pubKey))
 				}
@@ -297,7 +384,23 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 						}
 					}
 
+					hasAttachment := "false"
+					if attachment != nil {
+						hasAttachment = "true"
+					}
+
 					err := o.Email.SendPasswordEmailWithAttachment(activeEvents[i].Email, vmName, username, password, attachment)
+					if o.Metrics != nil {
+						emailStatus := "success"
+						if err != nil {
+							emailStatus = "failure"
+						}
+						o.Metrics.EmailSendTotal.Add(context.Background(), 1,
+							metric.WithAttributeSet(attribute.NewSet(
+								attribute.String("status", emailStatus),
+								attribute.String("has_attachment", hasAttachment),
+							)))
+					}
 					if err != nil {
 						o.Logger.Error("Failed to send password email",
 							logger.F("EMAIL", activeEvents[i].Email),
