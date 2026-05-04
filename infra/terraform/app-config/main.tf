@@ -35,6 +35,16 @@ data "terraform_remote_state" "wireguard" {
 #   - esxi-users:         ESXi URL + user/VM mappings
 #   - opnsense-wireguard: WireGuard server config + peer addresses
 
+locals {
+  # Go loader expects map[string][]string — each mapping must render as TOML arrays:
+  #   "lab-user-1" = ["Pod-1_"]
+  # Coerce with try(...) so legacy state that stored a scalar string becomes a length-1 slice.
+  esxi_user_vm_mappings_normalized = {
+    for username, prefixes in data.terraform_remote_state.esxi_users.outputs.user_vm_mappings : username =>
+    try(tolist(prefixes), [tostring(prefixes)])
+  }
+}
+
 resource "local_file" "user_config" {
   filename        = "${path.module}/../../../api/data/user_config.toml"
   file_permission = "0644"
@@ -46,7 +56,7 @@ resource "local_file" "user_config" {
 
     # ESXi (from esxi-users state)
     esxi_url              = data.terraform_remote_state.esxi_users.outputs.esxi_url
-    esxi_user_vm_mappings = data.terraform_remote_state.esxi_users.outputs.user_vm_mappings
+    esxi_user_vm_mappings = local.esxi_user_vm_mappings_normalized
     esxi_snapshot_name    = var.esxi_snapshot_name
 
     # WireGuard (from opnsense-wireguard state)
