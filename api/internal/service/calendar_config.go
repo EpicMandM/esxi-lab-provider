@@ -25,22 +25,22 @@ type FeatureConfig struct {
 }
 
 type ESXiConfig struct {
-	URL            string            `toml:"url"`
-	UserVMMappings map[string]string `toml:"user_vm_mappings"`
-	SnapshotName   *string           `toml:"snapshot_name"`
+	URL            string              `toml:"url"`
+	UserVMMappings map[string][]string `toml:"user_vm_mappings"`
+	SnapshotName   *string             `toml:"snapshot_name"`
 }
 
-// UserVMPair represents a paired user and VM from the mapping.
+// UserVMPair represents a user and all their assigned VMs from the mapping.
 type UserVMPair struct {
 	User string
-	VM   string
+	VMs  []string
 }
 
 // UserVMPairs returns user-VM pairs in sorted order by username for deterministic iteration.
 func (c *ESXiConfig) UserVMPairs() []UserVMPair {
 	pairs := make([]UserVMPair, 0, len(c.UserVMMappings))
-	for user, vm := range c.UserVMMappings {
-		pairs = append(pairs, UserVMPair{User: user, VM: vm})
+	for user, vms := range c.UserVMMappings {
+		pairs = append(pairs, UserVMPair{User: user, VMs: vms})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
 		return pairs[i].User < pairs[j].User
@@ -48,12 +48,12 @@ func (c *ESXiConfig) UserVMPairs() []UserVMPair {
 	return pairs
 }
 
-// VMs returns the list of VM names from user-VM mappings in sorted user order.
+// VMs returns all VM names from user-VM mappings in sorted user order.
 func (c *ESXiConfig) VMs() []string {
 	pairs := c.UserVMPairs()
-	vms := make([]string, len(pairs))
-	for i, p := range pairs {
-		vms[i] = p.VM
+	var vms []string
+	for _, p := range pairs {
+		vms = append(vms, p.VMs...)
 	}
 	return vms
 }

@@ -1,9 +1,10 @@
 terraform {
+  # renovate: datasource=github-releases depName=opentofu/opentofu
   required_version = ">= 1.6.0"
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 7.12.0"
+      version = "~> 7.30.0"
     }
     local = {
       source  = "hashicorp/local"
@@ -31,14 +32,43 @@ resource "google_project_service" "gmail_api" {
   disable_on_destroy = false
 }
 
+resource "google_project_service" "monitoring_api" {
+  service            = "monitoring.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "forms_api" {
+  service            = "forms.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "sheets_api" {
+  service            = "sheets.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "apps_script_api" {
+  service            = "script.googleapis.com"
+  disable_on_destroy = false
+}
+
 # ──────────────────────────────────────────────
-# Service Account for Calendar + Gmail
+# Service Account for Calendar, Gmail + Metrics
 # ──────────────────────────────────────────────
 
 resource "google_service_account" "calendar_sa" {
   account_id   = "calendar-service-account"
-  display_name = "Calendar and Gmail Service Account"
-  description  = "Service account for accessing Google Calendar and Gmail APIs"
+  display_name = "ESXi Lab Service Account"
+  description  = "Service account for Google Calendar, Gmail, and Cloud Monitoring (metrics writer)"
+}
+
+# Grant metricWriter so the binary can push custom metrics directly
+resource "google_project_iam_member" "calendar_sa_metric_writer" {
+  project = var.gcp_project
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.calendar_sa.email}"
+
+  depends_on = [google_project_service.monitoring_api]
 }
 
 resource "google_service_account_key" "calendar_sa_key" {

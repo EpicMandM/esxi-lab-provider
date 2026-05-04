@@ -3,9 +3,9 @@ output "user_credentials" {
   sensitive   = true
   value = {
     for name, user in local.users : name => {
-      username = name
-      password = user.password
-      vm       = user.vm_name
+      username  = name
+      password  = user.password
+      vm_prefix = user.vm_prefix
     }
   }
 }
@@ -17,12 +17,12 @@ output "esxi_url" {
 
 output "user_vm_mappings" {
   description = <<-EOT
-    Map of lab user names to a list of VM identifiers ([]string).
+    Map of lab user names to a list of VM name prefixes ([]string).
     Rendered into user_config.toml as TOML arrays (required by LoadFeatureConfig), e.g.
-    "lab-user-1" = ["Pod-1_FortiGate"].
+    "lab-user-1" = ["Pod-1_"]. All VMs whose names start with a prefix belong to that user.
   EOT
   value = {
-    for name, user in local.users : name => [user.vm_name]
+    for name, user in local.users : name => [user.vm_prefix]
   }
 }
 

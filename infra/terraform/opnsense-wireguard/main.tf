@@ -1,9 +1,10 @@
 terraform {
+  # renovate: datasource=github-releases depName=opentofu/opentofu
   required_version = ">= 1.6.0"
   required_providers {
     opnsense = {
       source  = "browningluke/opnsense"
-      version = "0.16.1"
+      version = "0.18.0"
     }
 
   }
