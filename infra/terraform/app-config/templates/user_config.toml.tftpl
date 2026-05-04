@@ -12,6 +12,7 @@ url = "${esxi_url}"
 snapshot_name = "${esxi_snapshot_name}"
 %{ endif ~}
 
+# Per-user ESXi VM name prefixes ([]string — required by the Go loader, not scalar strings).
 [esxi.user_vm_mappings]
 %{ for user, vm in esxi_user_vm_mappings ~}
 "${user}" = "${vm}"

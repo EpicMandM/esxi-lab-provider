@@ -16,9 +16,13 @@ output "esxi_url" {
 }
 
 output "user_vm_mappings" {
-  description = "Map of lab user names to their assigned VMs"
+  description = <<-EOT
+    Map of lab user names to a list of VM identifiers ([]string).
+    Rendered into user_config.toml as TOML arrays (required by LoadFeatureConfig), e.g.
+    "lab-user-1" = ["Pod-1_FortiGate"].
+  EOT
   value = {
-    for name, user in local.users : name => user.vm_name
+    for name, user in local.users : name => [user.vm_name]
   }
 }
 
