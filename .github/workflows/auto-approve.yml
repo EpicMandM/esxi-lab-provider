@@ -84,19 +84,39 @@ jobs:
           github-token: ${{ secrets.AUTO_APPROVE_PAT || secrets.GITHUB_TOKEN }}
           script: |
             const prNodeId = '${{ steps.find-pr.outputs.pr-node-id }}';
+            const prNumber = Number('${{ steps.find-pr.outputs.pr-number }}');
 
             // Omit mergeMethod so GitHub uses the repository default (avoids failure
             // when squash merge is disabled but merge commits are allowed).
-            await github.graphql(`
-              mutation EnableAutoMerge($pullRequestId: ID!) {
-                enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId
-                }) {
-                  pullRequest {
-                    autoMergeRequest { enabledAt }
+            try {
+              await github.graphql(`
+                mutation EnableAutoMerge($pullRequestId: ID!) {
+                  enablePullRequestAutoMerge(input: {
+                    pullRequestId: $pullRequestId
+                  }) {
+                    pullRequest {
+                      autoMergeRequest { enabledAt }
+                    }
                   }
                 }
+              `, { pullRequestId: prNodeId });
+              core.info(`Automerge enabled for PR #${prNumber}`);
+            } catch (e) {
+              // When no branch-protection *required* checks exist, GitHub leaves the PR in
+              // "clean status" (mergeable now) and rejects enablePullRequestAutoMerge.
+              // CI already succeeded (this job only runs after workflow_run success), so merge.
+              const messages = (e.errors || []).map((err) => err.message).join(' ');
+              const combined = `${messages} ${e.message || ''}`;
+              if (!combined.includes('clean status')) {
+                throw e;
               }
-            `, { pullRequestId: prNodeId });
-
-            core.info(`Automerge enabled for PR #${{ steps.find-pr.outputs.pr-number }}`);
+              core.info(
+                `Automerge unavailable (clean status); merging PR #${prNumber} directly.`,
+              );
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              core.info(`Merged PR #${prNumber}`);
+            }
