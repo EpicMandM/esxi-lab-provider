@@ -157,6 +157,61 @@ tasks:
       - '{{.SSH}} "sudo systemctl start {{.SERVICE_NAME}}.service"'
       - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 100"'
 
+  tunnel:
+    desc: "TCP tunnel localhost:10443 -> ESXi via WireGuard (run inside devcontainer or auto-detect)"
+    vars:
+      REMOTE_HOST: '{{.REMOTE_HOST | default "172.17.17.29"}}'
+      REMOTE_PORT: '{{.REMOTE_PORT | default "443"}}'
+      LOCAL_PORT: '{{.LOCAL_PORT | default "10443"}}'
+    cmds:
+      - chmod +x scripts/tunnel.sh
+      - |
+        export REMOTE_HOST='{{.REMOTE_HOST}}' REMOTE_PORT='{{.REMOTE_PORT}}' LOCAL_PORT='{{.LOCAL_PORT}}'
+        if [ -f /.dockerenv ]; then
+          bash scripts/tunnel.sh start
+        else
+          CONTAINER=$(docker ps -q --filter "volume={{.PWD}}" 2>/dev/null | head -1)
+          if [ -z "$CONTAINER" ]; then
+            CONTAINER=$(docker ps -q --filter "name=esxi-lab-provider" 2>/dev/null | head -1)
+          fi
+          if [ -z "$CONTAINER" ]; then
+            echo "No devcontainer found. Run from inside the devcontainer or set CONTAINER id." >&2
+            exit 1
+          fi
+          docker exec -e REMOTE_HOST -e REMOTE_PORT -e LOCAL_PORT "$CONTAINER" \
+            bash -lc '/workspaces/esxi-lab-provider/scripts/tunnel.sh start'
+        fi
+
+  tunnel:stop:
+    desc: Stop the ESXi TCP tunnel
+    vars:
+      LOCAL_PORT: '{{.LOCAL_PORT | default "10443"}}'
+    cmds:
+      - |
+        export LOCAL_PORT='{{.LOCAL_PORT}}'
+        if [ -f /.dockerenv ]; then
+          bash scripts/tunnel.sh stop
+        else
+          CONTAINER=$(docker ps -q --filter "volume={{.PWD}}" 2>/dev/null | head -1)
+          [ -n "$CONTAINER" ] || CONTAINER=$(docker ps -q --filter "name=esxi-lab-provider" 2>/dev/null | head -1)
+          docker exec -e LOCAL_PORT "$CONTAINER" bash -lc '/workspaces/esxi-lab-provider/scripts/tunnel.sh stop'
+        fi
+
+  tunnel:status:
+    desc: Show ESXi tunnel and WireGuard status
+    vars:
+      LOCAL_PORT: '{{.LOCAL_PORT | default "10443"}}'
+    cmds:
+      - |
+        export LOCAL_PORT='{{.LOCAL_PORT}}'
+        if [ -f /.dockerenv ]; then
+          bash scripts/tunnel.sh status
+        else
+          CONTAINER=$(docker ps -q --filter "volume={{.PWD}}" 2>/dev/null | head -1)
+          [ -n "$CONTAINER" ] || CONTAINER=$(docker ps -q --filter "name=esxi-lab-provider" 2>/dev/null | head -1)
+          docker exec -e LOCAL_PORT "$CONTAINER" bash -lc '/workspaces/esxi-lab-provider/scripts/tunnel.sh status'
+        fi
+
   test:
     desc: Run all unit tests
     dir: api
