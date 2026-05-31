@@ -1,0 +1,7 @@
+{
+    "id": "lab-tools",
+    "version": "1.0.0",
+    "name": "Lab Tools",
+    "description": "WireGuard CLI and tflint for local development and Terraform linting",
+    "options": {}
+}

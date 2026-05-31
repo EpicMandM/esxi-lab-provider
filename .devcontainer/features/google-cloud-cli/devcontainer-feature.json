@@ -1,0 +1,8 @@
+{
+    "id": "google-cloud-cli",
+    "version": "1.0.0",
+    "name": "Google Cloud CLI",
+    "description": "Install Google Cloud CLI from the official tarball (no apt repository)",
+    "documentationURL": "https://cloud.google.com/sdk/docs/install-sdk#deb",
+    "options": {}
+}
