@@ -2,7 +2,8 @@
     "name": "esxi-lab-provider dev",
     "build": {
         "dockerfile": "Dockerfile",
-        "context": ".."
+        "context": "..",
+        "options": ["--platform=linux/amd64"]
     },
     "remoteUser": "vscode",
     "updateRemoteUserUID": true,

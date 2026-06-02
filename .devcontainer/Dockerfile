@@ -33,38 +33,40 @@ RUN apk add --no-cache \
 	github-cli \
 	gcompat \
 	libc6-compat \
+	libstdc++ \
 	openssh-client \
 	python3 \
 	py3-pip \
 	shadow \
 	sudo \
+	util-linux \
+	wget \
 	wireguard-tools \
 	&& pip install --break-system-packages --no-cache-dir "pre-commit==${PRE_COMMIT_VERSION}"
 
+RUN printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = \"-D\" ]; then shift; exec /bin/busybox base64 -d \"\$@\"; fi" "exec /bin/busybox base64 \"\$@\"" > /usr/local/bin/base64 \
+	&& chmod +x /usr/local/bin/base64 \
+	&& ln -sf /usr/local/bin/base64 /usr/bin/base64 \
+	&& ln -sf /usr/local/bin/base64 /bin/base64
+
 RUN set -eux; \
-	arch="$(uname -m)"; \
-	case "$arch" in \
-	x86_64) goarch="amd64"; govc_arch="x86_64"; gcloud_arch="x86_64"; hadolint_arch="x86_64" ;; \
-	aarch64) goarch="arm64"; govc_arch="arm64"; gcloud_arch="arm"; hadolint_arch="arm64" ;; \
-	*) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
-	esac; \
-	curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" \
+	curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
 	| tar -C /usr/local -xz; \
-	curl -fsSL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_${goarch}.tar.gz" \
+	curl -fsSL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.tar.gz" \
 	| tar -xz -C /usr/local/bin tofu; \
-	curl -fsSL "https://github.com/go-task/task/releases/download/v${TASK_VERSION}/task_linux_${goarch}.tar.gz" \
+	curl -fsSL "https://github.com/go-task/task/releases/download/v${TASK_VERSION}/task_linux_amd64.tar.gz" \
 	| tar -xz -C /usr/local/bin task; \
-	curl -fsSL "https://github.com/vmware/govmomi/releases/download/v${GOVC_VERSION}/govc_Linux_${govc_arch}.tar.gz" \
+	curl -fsSL "https://github.com/vmware/govmomi/releases/download/v${GOVC_VERSION}/govc_Linux_x86_64.tar.gz" \
 	| tar -xz -C /usr/local/bin govc; \
 	export TFLINT_VERSION="v${TFLINT_VERSION}"; \
 	curl -fsSL https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash; \
 	curl -fsSL https://golangci-lint.run/install.sh \
 	| sh -s -- -b /usr/local/bin "v${GOLANGCI_LINT_VERSION}"; \
-	curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-${hadolint_arch}" \
+	curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-x86_64" \
 	-o /usr/local/bin/hadolint; \
 	chmod +x /usr/local/bin/hadolint; \
 	tmpdir="$(mktemp -d)"; \
-	curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-${gcloud_arch}.tar.gz" \
+	curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz" \
 	| tar -xz -C "$tmpdir"; \
 	mv "$tmpdir/google-cloud-sdk" /opt/google-cloud-sdk; \
 	/opt/google-cloud-sdk/install.sh --quiet --usage-reporting false --command-completion false --path-update false; \
