@@ -1,7 +1,6 @@
 {
     "name": "esxi-lab-provider dev",
     "image": "ghcr.io/epicmandm/esxi-lab-provider/devcontainer:latest",
-    "platform": "linux/amd64",
     "remoteUser": "vscode",
     "updateRemoteUserUID": true,
     "runArgs": [
