@@ -1,11 +1,6 @@
 name: Devcontainer
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.devcontainer/**'
-      - '.github/workflows/devcontainer.yml'
   # 06:00 UTC on the 1st and 15th (~every two weeks)
   schedule:
     - cron: '0 6 1,15 * *'
@@ -26,7 +21,7 @@ jobs:
         id: decide
         run: |
           case "${{ github.event_name }}" in
-            push|workflow_dispatch)
+            workflow_dispatch)
               echo "build=true" >> "$GITHUB_OUTPUT"
               ;;
             schedule)

@@ -4,7 +4,6 @@ on:
   # Run every day at 03:00 UTC
   schedule:
     - cron: '0 3 * * *'
-  # Allow manual triggering
   workflow_dispatch:
     inputs:
       log_level:
@@ -16,12 +15,6 @@ on:
           - debug
           - info
           - warn
-  # Re-run whenever the Renovate config or this workflow itself changes
-  push:
-    branches: [main]
-    paths:
-      - .github/renovate.json
-      - .github/workflows/renovate.yml
 
 jobs:
   renovate:
