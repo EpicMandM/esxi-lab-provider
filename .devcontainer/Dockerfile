@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # renovate: datasource=docker depName=alpine versioning=semver
-FROM alpine:3.21
+FROM alpine:3.23
 
 # renovate: datasource=golang-version depName=golang packageName=golang
 ARG GO_VERSION=1.26.0
