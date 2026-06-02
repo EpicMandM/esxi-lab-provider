@@ -15,14 +15,13 @@ type Config struct {
 	ESXiInsecure bool
 }
 
-// Load loads configuration from environment variables only.
+// Load loads configuration from environment variables.
 func Load() (*Config, error) {
 	return LoadWithFile("")
 }
 
 // LoadWithFile loads configuration from an optional .env file and environment variables.
 func LoadWithFile(envFile string) (*Config, error) {
-	// Attempt to load .env file if provided, but don't fail if it doesn't exist.
 	if envFile != "" {
 		if err := godotenv.Load(envFile); err != nil && !os.IsNotExist(err) {
 			return nil, fmt.Errorf("error loading .env file: %w", err)
@@ -57,7 +56,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// parseInsecure converts a string to a boolean, defaulting to false.
+// parseInsecure converts a string to bool, defaulting to false.
 func parseInsecure(s string) bool {
 	b, _ := strconv.ParseBool(s)
 	return b

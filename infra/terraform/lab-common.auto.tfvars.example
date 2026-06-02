@@ -1,0 +1,2 @@
+gcp_project       = "your-gcp-project"
+lab_env_secret_id = "esxi-lab-env"

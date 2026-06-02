@@ -21,8 +21,15 @@ go.work
 # Project-specific files
 # Environment with secrets
 .env
+secrets.env
+infra/terraform/lab-common.auto.tfvars
+infra/terraform/lab-esxi.auto.tfvars
+infra/terraform/lab-network.auto.tfvars
+infra/terraform/lab-smtp.auto.tfvars
+infra/terraform/wireguard-config.auto.tfvars
 # Compiled Go binary
 api/main
+esxi-lab-scheduler
 # Service account credentials
 service-account.json
 **/service-account.json

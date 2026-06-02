@@ -2,6 +2,10 @@ terraform {
   # renovate: datasource=github-releases depName=opentofu/opentofu
   required_version = ">= 1.6.0"
   required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 7.34.0"
+    }
     null = {
       source  = "hashicorp/null"
       version = "~> 3.2"
@@ -13,11 +17,15 @@ terraform {
   }
 }
 
+provider "google" {
+  project = var.gcp_project
+}
+
 locals {
   govc_env = {
-    GOVC_URL      = var.esxi_url
-    GOVC_USERNAME = var.esxi_admin_username
-    GOVC_PASSWORD = var.esxi_admin_password
+    GOVC_URL      = local.esxi_url
+    GOVC_USERNAME = local.esxi_admin_username
+    GOVC_PASSWORD = local.esxi_admin_password
     GOVC_INSECURE = "true"
   }
 
@@ -45,10 +53,6 @@ locals {
   ]
 }
 
-# ──────────────────────────────────────────────
-# Generate random passwords for each user
-# ──────────────────────────────────────────────
-
 resource "random_password" "user_passwords" {
   count   = var.user_count
   length  = 16
@@ -60,18 +64,13 @@ resource "random_password" "user_passwords" {
   min_special = 1
 }
 
-# ──────────────────────────────────────────────
-# Create the "lab-console" role on ESXi
-# ──────────────────────────────────────────────
-# Grants only console interaction and power management privileges.
-
 resource "null_resource" "esxi_role" {
   triggers = {
     privileges    = join(",", local.role_privileges)
     role_name     = var.role_name
-    esxi_url      = var.esxi_url
-    esxi_username = var.esxi_admin_username
-    esxi_password = var.esxi_admin_password
+    esxi_url      = local.esxi_url
+    esxi_username = local.esxi_admin_username
+    esxi_password = local.esxi_admin_password
   }
 
   lifecycle {
@@ -105,19 +104,15 @@ resource "null_resource" "esxi_role" {
   }
 }
 
-# ──────────────────────────────────────────────
-# Create local ESXi users
-# ──────────────────────────────────────────────
-
 resource "null_resource" "esxi_users" {
   for_each = local.users
 
   triggers = {
     username      = each.key
     password      = each.value.password
-    esxi_url      = var.esxi_url
-    esxi_username = var.esxi_admin_username
-    esxi_password = var.esxi_admin_password
+    esxi_url      = local.esxi_url
+    esxi_username = local.esxi_admin_username
+    esxi_password = local.esxi_admin_password
   }
 
   lifecycle {
@@ -159,21 +154,19 @@ resource "null_resource" "esxi_users" {
   depends_on = [null_resource.esxi_role]
 }
 
-# ──────────────────────────────────────────────
-# Assign per-VM permissions (user -> VM with role)
-# ──────────────────────────────────────────────
-# Each user gets the "lab-console" role on their FortiGate VM and Client_Deb VM (non-propagated).
-
 resource "null_resource" "fortigate_permissions" {
-  for_each = local.users
+  for_each = {
+    for name, user in local.users : name => user
+    if contains(var.fortigate_pod_indices, user.index)
+  }
 
   triggers = {
     username      = each.key
     vm_name       = each.value.vm_fortigate
     role_name     = var.role_name
-    esxi_url      = var.esxi_url
-    esxi_username = var.esxi_admin_username
-    esxi_password = var.esxi_admin_password
+    esxi_url      = local.esxi_url
+    esxi_username = local.esxi_admin_username
+    esxi_password = local.esxi_admin_password
   }
 
   lifecycle {
@@ -223,9 +216,9 @@ resource "null_resource" "client_deb_permissions" {
     username      = each.key
     vm_name       = each.value.vm_client_deb
     role_name     = var.role_name
-    esxi_url      = var.esxi_url
-    esxi_username = var.esxi_admin_username
-    esxi_password = var.esxi_admin_password
+    esxi_url      = local.esxi_url
+    esxi_username = local.esxi_admin_username
+    esxi_password = local.esxi_admin_password
   }
 
   lifecycle {

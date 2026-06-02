@@ -11,10 +11,10 @@ output "peer_ids" {
 output "peer_tunnel_addresses" {
   description = "Tunnel addresses assigned to each peer"
   value = [
-    var.peer1_tunnel_address,
-    var.peer2_tunnel_address,
-    var.peer3_tunnel_address,
-    var.peer4_tunnel_address,
+    local.peer1_tunnel_address,
+    local.peer2_tunnel_address,
+    local.peer3_tunnel_address,
+    local.peer4_tunnel_address,
   ]
 }
 
@@ -25,20 +25,20 @@ output "server_id" {
 
 output "server_public_key" {
   description = "WireGuard server public key"
-  value       = var.wireguard_server_public_key
+  value       = local.wireguard_server_public_key
 }
 
 output "server_endpoint" {
   description = "WireGuard server endpoint (host:port) for client configs"
-  value       = var.wireguard_public_endpoint
+  value       = local.wireguard_public_endpoint
 }
 
 output "server_tunnel_address" {
   description = "WireGuard server tunnel address CIDR"
-  value       = var.wireguard_server_tunnel_address
+  value       = local.wireguard_server_tunnel_address
 }
 
 output "opnsense_url" {
   description = "OPNsense URL"
-  value       = var.opnsense_url
+  value       = local.opnsense_url
 }

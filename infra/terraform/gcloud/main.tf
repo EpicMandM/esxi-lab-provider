@@ -11,6 +11,11 @@ terraform {
       version = "~> 2.5"
     }
   }
+
+  backend "gcs" {
+    bucket = "exsi-chat-app-478319-terraform-state"
+    prefix = "gcloud"
+  }
 }
 
 provider "google" {
@@ -50,6 +55,33 @@ resource "google_project_service" "sheets_api" {
 resource "google_project_service" "apps_script_api" {
   service            = "script.googleapis.com"
   disable_on_destroy = false
+}
+
+resource "google_project_service" "storage_api" {
+  service            = "storage.googleapis.com"
+  disable_on_destroy = false
+}
+
+# ──────────────────────────────────────────────
+# Remote state bucket (shared across clones/CI)
+# ──────────────────────────────────────────────
+
+resource "google_storage_bucket" "terraform_state" {
+  name     = var.terraform_state_bucket
+  location = var.gcp_region
+  project  = var.gcp_project
+
+  uniform_bucket_level_access = true
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [google_project_service.storage_api]
 }
 
 # ──────────────────────────────────────────────

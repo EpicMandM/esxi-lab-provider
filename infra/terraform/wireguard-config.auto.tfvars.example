@@ -1,0 +1,13 @@
+wireguard_server_name           = "WG"
+wireguard_server_public_key     = "server-public-key-here"
+wireguard_server_port           = 51820
+wireguard_public_endpoint       = "203.0.113.1:51820"
+wireguard_server_tunnel_address = "172.17.18.1/24"
+wireguard_server_mtu            = 1380
+wireguard_server_dns            = []
+# wireguard_existing_peer_ids   = ["uuid-1"]
+
+peer1_tunnel_address = "172.17.18.101/32"
+peer2_tunnel_address = "172.17.18.102/32"
+peer3_tunnel_address = "172.17.18.103/32"
+peer4_tunnel_address = "172.17.18.104/32"

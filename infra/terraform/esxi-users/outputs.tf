@@ -12,7 +12,12 @@ output "user_credentials" {
 
 output "esxi_url" {
   description = "ESXi host URL"
-  value       = var.esxi_url
+  value       = local.esxi_url
+}
+
+output "esxi_admin_username" {
+  description = "ESXi admin username used by Terraform provisioning"
+  value       = local.esxi_admin_username
 }
 
 output "user_vm_mappings" {

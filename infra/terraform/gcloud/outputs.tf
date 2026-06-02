@@ -13,3 +13,13 @@ output "service_account_email" {
   description = "Service account email address (Calendar, Gmail, and Cloud Monitoring)"
   value       = google_service_account.calendar_sa.email
 }
+
+output "lab_env_secret_id" {
+  description = "Secret Manager secret ID for lab credentials — consumed by esxi-users and opnsense-wireguard"
+  value       = google_secret_manager_secret.esxi_lab_env.secret_id
+}
+
+output "gcp_project" {
+  description = "GCP project ID"
+  value       = var.gcp_project
+}
