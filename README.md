@@ -4,7 +4,7 @@ Hourly systemd job: read Google Calendar events, restore ESXi VM snapshots, rota
 
 ## Prerequisites
 
-- Dev container (Alpine image: Go, OpenTofu, gcloud, gh, govc, Task)
+- Dev container (Debian image: Go, OpenTofu, gcloud, gh, govc, Task)
 - GCP project with Calendar + Gmail APIs
 - ESXi host and OPNsense (WireGuard optional)
 

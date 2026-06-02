@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# renovate: datasource=docker depName=alpine versioning=semver
-FROM alpine:3.23
+# renovate: datasource=docker depName=debian versioning=semver
+FROM debian:stable-slim
 
 # renovate: datasource=golang-version depName=golang packageName=golang
 ARG GO_VERSION=1.26.0
@@ -16,6 +16,8 @@ ARG TFLINT_VERSION=0.62.1
 ARG GOLANGCI_LINT_VERSION=2.12.2
 # renovate: datasource=github-releases depName=hadolint/hadolint
 ARG HADOLINT_VERSION=2.13.1
+# renovate: datasource=github-releases depName=cli/cli
+ARG GH_VERSION=2.93.0
 # renovate: datasource=pypi depName=pre-commit
 ARG PRE_COMMIT_VERSION=4.6.0
 
@@ -23,31 +25,26 @@ ARG DEVCONTAINER_USER=vscode
 ARG DEVCONTAINER_UID=1000
 ARG DEVCONTAINER_GID=1000
 
-SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apk add --no-cache \
-	bash \
-	ca-certificates \
-	curl \
-	git \
-	github-cli \
-	gcompat \
-	libc6-compat \
-	libstdc++ \
-	openssh-client \
-	python3 \
-	py3-pip \
-	shadow \
-	sudo \
-	util-linux \
-	wget \
-	wireguard-tools \
-	&& pip install --break-system-packages --no-cache-dir "pre-commit==${PRE_COMMIT_VERSION}"
-
-RUN printf "%s\n" "#!/bin/sh" "if [ \"\$1\" = \"-D\" ]; then shift; exec /bin/busybox base64 -d \"\$@\"; fi" "exec /bin/busybox base64 \"\$@\"" > /usr/local/bin/base64 \
-	&& chmod +x /usr/local/bin/base64 \
-	&& ln -sf /usr/local/bin/base64 /usr/bin/base64 \
-	&& ln -sf /usr/local/bin/base64 /bin/base64
+# hadolint ignore=DL3008
+RUN set -eux; \
+	apt-get update; \
+	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		ca-certificates \
+		curl \
+		git \
+		iproute2 \
+		libstdc++6 \
+		openssh-client \
+		python3 \
+		python3-pip \
+		socat \
+		sudo \
+		wireguard-tools \
+	; \
+	rm -rf /var/lib/apt/lists/*; \
+	pip3 install --break-system-packages --no-cache-dir "pre-commit==${PRE_COMMIT_VERSION}";
 
 RUN set -eux; \
 	curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
@@ -58,27 +55,31 @@ RUN set -eux; \
 	| tar -xz -C /usr/local/bin task; \
 	curl -fsSL "https://github.com/vmware/govmomi/releases/download/v${GOVC_VERSION}/govc_Linux_x86_64.tar.gz" \
 	| tar -xz -C /usr/local/bin govc; \
-	export TFLINT_VERSION="v${TFLINT_VERSION}"; \
-	curl -fsSL https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash; \
-	curl -fsSL https://golangci-lint.run/install.sh \
-	| sh -s -- -b /usr/local/bin "v${GOLANGCI_LINT_VERSION}"; \
+	curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz" \
+	| tar -xz -C /usr/local/bin --strip-components=1 "golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint"; \
 	curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-x86_64" \
 	-o /usr/local/bin/hadolint; \
 	chmod +x /usr/local/bin/hadolint; \
+	curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+	| tar -xz -C /usr/local/bin --strip-components=2 "gh_${GH_VERSION}_linux_amd64/bin/gh"; \
 	tmpdir="$(mktemp -d)"; \
+	curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_amd64.zip" \
+		-o "${tmpdir}/tflint.zip"; \
+	python3 -m zipfile -e "${tmpdir}/tflint.zip" "${tmpdir}"; \
+	install -m 0755 "${tmpdir}/tflint" /usr/local/bin/tflint; \
 	curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz" \
-	| tar -xz -C "$tmpdir"; \
-	mv "$tmpdir/google-cloud-sdk" /opt/google-cloud-sdk; \
+	| tar -xz -C "${tmpdir}"; \
+	mv "${tmpdir}/google-cloud-sdk" /opt/google-cloud-sdk; \
 	/opt/google-cloud-sdk/install.sh --quiet --usage-reporting false --command-completion false --path-update false; \
 	ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud; \
 	ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil; \
 	ln -sf /opt/google-cloud-sdk/bin/bq /usr/local/bin/bq; \
-	rm -rf "$tmpdir"
+	rm -rf "${tmpdir}";
 
 ENV PATH="/usr/local/go/bin:/usr/local/bin:${PATH}"
 
-RUN addgroup -g "${DEVCONTAINER_GID}" "${DEVCONTAINER_USER}" \
-	&& adduser -D -u "${DEVCONTAINER_UID}" -G "${DEVCONTAINER_USER}" -s /bin/bash "${DEVCONTAINER_USER}" \
+RUN groupadd -g "${DEVCONTAINER_GID}" "${DEVCONTAINER_USER}" \
+	&& useradd -l -m -u "${DEVCONTAINER_UID}" -g "${DEVCONTAINER_GID}" -s /bin/bash "${DEVCONTAINER_USER}" \
 	&& echo "${DEVCONTAINER_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${DEVCONTAINER_USER}" \
 	&& chmod 0440 "/etc/sudoers.d/${DEVCONTAINER_USER}"
 

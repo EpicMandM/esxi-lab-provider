@@ -65,12 +65,12 @@
       "automerge": true
     },
     {
-      "description": "Alpine base image — separate from bundled tool ARG bumps",
+      "description": "Debian base image — separate from bundled tool ARG bumps",
       "matchManagers": ["dockerfile"],
       "matchFileNames": [".devcontainer/Dockerfile"],
       "matchDatasources": ["docker"],
-      "matchDepNames": ["alpine"],
-      "groupName": "devcontainer alpine base"
+      "matchDepNames": ["debian"],
+      "groupName": "devcontainer debian base"
     },
     {
       "description": "Require manual review for major updates",
