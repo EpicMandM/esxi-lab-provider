@@ -8,7 +8,7 @@ Hourly systemd job: read Google Calendar events, restore ESXi VM snapshots, rota
 - GCP project with Calendar + Gmail APIs
 - ESXi host and OPNsense (WireGuard optional)
 
-Prebuilt dev container image: `ghcr.io/epicmandm/esxi-lab-provider/devcontainer:latest` (built on push to `main` when `.devcontainer/` changes).
+Prebuilt dev container image: `ghcr.io/epicmandm/esxi-lab-provider/devcontainer:latest` (built on push to `main` when `.devcontainer/` changes, on a biweekly schedule if there were changes in the last 14 days, or via **Actions → Devcontainer → Run workflow**).
 
 ## Setup
 

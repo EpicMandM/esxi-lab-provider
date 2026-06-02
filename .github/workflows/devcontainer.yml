@@ -6,11 +6,45 @@ on:
     paths:
       - '.devcontainer/**'
       - '.github/workflows/devcontainer.yml'
+  # 06:00 UTC on the 1st and 15th (~every two weeks)
+  schedule:
+    - cron: '0 6 1,15 * *'
   workflow_dispatch:
 
 jobs:
+  should-build:
+    name: Check whether to build
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Decide
+        id: decide
+        run: |
+          case "${{ github.event_name }}" in
+            push|workflow_dispatch)
+              echo "build=true" >> "$GITHUB_OUTPUT"
+              ;;
+            schedule)
+              if git log --since='14 days ago' --oneline -- \
+                '.devcontainer' '.github/workflows/devcontainer.yml' | grep -q .; then
+                echo "build=true" >> "$GITHUB_OUTPUT"
+                echo "Devcontainer paths changed in the last 14 days; building."
+              else
+                echo "build=false" >> "$GITHUB_OUTPUT"
+                echo "No devcontainer changes in the last 14 days; skipping build."
+              fi
+              ;;
+          esac
+
   build:
     name: Build and push to GHCR
+    needs: should-build
+    if: needs.should-build.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
