@@ -58,10 +58,19 @@
       "automerge": true
     },
     {
-      "description": "Group devcontainer feature updates",
-      "matchManagers": ["devcontainer"],
-      "groupName": "devcontainer features",
+      "description": "Group devcontainer Dockerfile updates (base image and ARG pins)",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": [".devcontainer/Dockerfile"],
+      "groupName": "devcontainer image",
       "automerge": true
+    },
+    {
+      "description": "Alpine base image — separate from bundled tool ARG bumps",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": [".devcontainer/Dockerfile"],
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["alpine"],
+      "groupName": "devcontainer alpine base"
     },
     {
       "description": "Require manual review for major updates",
