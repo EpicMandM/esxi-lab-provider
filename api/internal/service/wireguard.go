@@ -14,7 +14,8 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
-// WireGuardConfig holds the WireGuard tunnel configuration from user_config.toml
+// WireGuardConfig holds tunnel settings from user_config.toml.
+// OPNsense API credentials come from .env (OPNSENSE_API_KEY, OPNSENSE_API_SECRET).
 type WireGuardConfig struct {
 	Enabled             bool     `toml:"enabled"`
 	ServerPublicKey     string   `toml:"server_public_key"`
@@ -24,28 +25,19 @@ type WireGuardConfig struct {
 	MTU                 int      `toml:"mtu"`
 	ClientAddresses     []string `toml:"client_addresses"`
 	Keepalive           int      `toml:"keepalive"`
-	// OPNsense API configuration (overridden from environment variables)
-	OPNsenseURL       string `toml:"opnsense_url"`
-	OPNsenseAPIKey    string `toml:"-"`
-	OPNsenseAPISecret string `toml:"-"`
-	OPNsenseInsecure  bool   `toml:"opnsense_insecure"`
-	AutoRegisterPeers bool   `toml:"auto_register_peers"`
+	OPNsenseURL         string   `toml:"opnsense_url"`
+	OPNsenseAPIKey      string   `toml:"-"`
+	OPNsenseAPISecret   string   `toml:"-"`
+	OPNsenseInsecure    bool     `toml:"opnsense_insecure"`
+	AutoRegisterPeers   bool     `toml:"auto_register_peers"`
 }
 
-// WireGuardService manages WireGuard tunnel configurations.
-//
-// Security note: private keys are held in plaintext in process memory for the
-// lifetime of the service. Keys are generated on-the-fly and are NOT persisted
-// to disk, so they will be lost if the process restarts (clients must then
-// regenerate). If the process memory is compromised, these keys are exposed.
 type WireGuardService struct {
 	config         *WireGuardConfig
 	privateKeys    map[string]string
 	opnsenseClient OPNsenseAPI
 }
 
-// NewWireGuardService creates a new WireGuard service.
-// opnsense may be nil when auto-registration is not needed.
 func NewWireGuardService(config *WireGuardConfig, opnsense OPNsenseAPI) *WireGuardService {
 	return &WireGuardService{
 		config:         config,
@@ -161,13 +153,6 @@ type OPNsenseClient struct {
 	client    *http.Client
 }
 
-// NewOPNsenseClient creates a new OPNsense API client.
-//
-// If httpClient is nil a default client is constructed. When insecure is true
-// TLS certificate verification is skipped — this is necessary when the
-// OPNsense appliance uses a self-signed certificate on a private network, but
-// it makes the connection vulnerable to man-in-the-middle attacks. Set
-// insecure to false and use a trusted certificate in production environments.
 func NewOPNsenseClient(url, apiKey, apiSecret string, httpClient *http.Client, insecure bool) *OPNsenseClient {
 	if httpClient == nil {
 		httpClient = &http.Client{
@@ -247,8 +232,6 @@ func (c *OPNsenseClient) SearchPeerByTunnelAddress(tunnelAddress string) (*PeerR
 }
 
 // UpdatePeer updates an existing WireGuard peer's public key.
-// The servers field MUST be included to preserve the peer's attachment to
-// the WireGuard server — OPNsense clears omitted fields on set_client.
 func (c *OPNsenseClient) UpdatePeer(uuid, name, publicKey, tunnelAddress, servers string) error {
 	url := fmt.Sprintf("%s/api/wireguard/client/set_client/%s", c.baseURL, uuid)
 
@@ -399,9 +382,7 @@ func (c *OPNsenseClient) applyChanges() error {
 	return nil
 }
 
-// RegisterPeerWithOPNsense updates an existing peer's public key, or creates a new one.
-// This works even if the peer currently has a placeholder or empty public key (e.g. freshly
-// provisioned by Terraform). The peer is looked up by tunnel address, not by key.
+// RegisterPeerWithOPNsense updates an existing peer's public key by tunnel address.
 func (w *WireGuardService) RegisterPeerWithOPNsense(username string, publicKey string, userIndex int) error {
 	if !w.config.AutoRegisterPeers {
 		return nil

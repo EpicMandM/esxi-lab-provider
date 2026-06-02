@@ -256,3 +256,81 @@ tasks:
         echo ""
         echo "Coverage gate PASSED."
       - rm -f coverage.out
+
+  gcloud:auth:
+    desc: GCP auth — interactive locally, service account via env in CI
+    cmds:
+      - ./scripts/gcloud-auth.sh
+
+  config:generate:
+    desc: Generate .env and user_config.toml (used by infra:apply)
+    deps: [gcloud:auth]
+    dir: infra/terraform/app-config
+    cmds:
+      - tofu init -input=false
+      - |
+        tofu apply -auto-approve \
+          -var-file=../lab-common.auto.tfvars \
+          -var-file=../lab-smtp.auto.tfvars
+
+  secrets:push:
+    desc: Upload secrets.env to Secret Manager (used by infra:apply)
+    deps: [gcloud:auth]
+    cmds:
+      - ./scripts/push-lab-env-secret.sh
+
+  infra:init:
+    desc: Copy lab tfvars and secrets templates if missing
+    cmds:
+      - |
+        set -euo pipefail
+        TF=infra/terraform
+        for f in lab-common.auto.tfvars lab-esxi.auto.tfvars lab-network.auto.tfvars lab-smtp.auto.tfvars wireguard-config.auto.tfvars; do
+          if [ ! -f "$TF/$f" ]; then
+            cp "$TF/$f.example" "$TF/$f"
+            echo "Created $TF/$f — edit before task infra:apply"
+          fi
+        done
+        if [ ! -f secrets.env ]; then
+          cp secrets.env.example secrets.env
+          echo "Created secrets.env — fill credentials, then task infra:apply"
+        fi
+
+  infra:gcloud:
+    desc: GCP service account + Secret Manager secret
+    deps: [gcloud:auth]
+    dir: infra/terraform/gcloud
+    cmds:
+      - tofu init -input=false
+      - tofu apply -auto-approve -var-file=../lab-common.auto.tfvars
+
+  infra:esxi:
+    desc: ESXi lab users and VM permissions
+    deps: [gcloud:auth]
+    dir: infra/terraform/esxi-users
+    cmds:
+      - tofu init -input=false
+      - tofu apply -auto-approve \
+          -var-file=../lab-common.auto.tfvars \
+          -var-file=../lab-esxi.auto.tfvars
+
+  infra:wireguard:
+    desc: WireGuard peers on OPNsense
+    deps: [gcloud:auth]
+    dir: infra/terraform/opnsense-wireguard
+    cmds:
+      - tofu init -input=false
+      - tofu apply -auto-approve \
+          -var-file=../lab-common.auto.tfvars \
+          -var-file=../lab-network.auto.tfvars \
+          -var-file=../wireguard-config.auto.tfvars
+
+  infra:apply:
+    desc: Full lab provisioning (gcloud → secrets → esxi → wireguard → app config)
+    cmds:
+      - task: infra:init
+      - task: infra:gcloud
+      - task: secrets:push
+      - task: infra:esxi
+      - task: infra:wireguard
+      - task: config:generate

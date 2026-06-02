@@ -1,0 +1,58 @@
+name: Devcontainer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/**'
+      - '.github/workflows/devcontainer.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and push to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set image name
+        run: |
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/devcontainer"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "CACHE=${IMAGE}:buildcache" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@18ce135bb5112fa8ce4ed6c17ab05699d7f3a5e0 # v3.11.0
+        with:
+          driver: docker-container
+
+      - name: Cache devcontainer feature build context
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        with:
+          path: /tmp/devcontainer-features
+          key: devcontainer-features-${{ hashFiles('.devcontainer/**') }}
+          restore-keys: |
+            devcontainer-features-
+
+      - name: Build and push devcontainer
+        uses: devcontainers/ci@8bf61b26e9c3a98f69cb6ce2f88d24ff59b785c6 # v0.3.1900000417
+        with:
+          imageName: ${{ env.IMAGE }}
+          imageTag: latest,${{ github.sha }}
+          userDataFolder: /tmp/devcontainer-features
+          cacheFrom: |
+            type=registry,ref=${{ env.CACHE }}
+            type=registry,ref=${{ env.IMAGE }}:latest
+          cacheTo: type=registry,ref=${{ env.CACHE }},mode=max
+          push: always
+          runCmd: go version && task --version && tofu version && gcloud --version

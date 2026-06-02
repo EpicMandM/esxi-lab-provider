@@ -1,11 +1,17 @@
 variable "gcp_project" {
-  description = "GCP project ID"
-  type        = string
-  default     = "exsi-chat-app-478319"
+  type = string
 }
 
 variable "gcp_region" {
-  description = "GCP region"
-  type        = string
-  default     = "europe-west1"
+  type    = string
+  default = "europe-west1"
+}
+
+variable "terraform_state_bucket" {
+  type    = string
+  default = "exsi-chat-app-478319-terraform-state"
+}
+
+variable "lab_env_secret_id" {
+  type = string
 }

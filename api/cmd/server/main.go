@@ -25,16 +25,12 @@ func main() {
 func run(log *logger.Logger) error {
 	ctx := context.Background()
 
-	// Let the GCP SDK find credentials via the same path used for the calendar service.
 	if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
 		if sa := os.Getenv("SERVICE_ACCOUNT_PATH"); sa != "" {
-			if err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", sa); err != nil {
-				log.Warn("Failed to set GOOGLE_APPLICATION_CREDENTIALS environment variable", logger.Error(err))
-			}
+			_ = os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", sa)
 		}
 	}
 
-	// Initialise OTel metrics (optional — skip gracefully if not configured).
 	var appMetrics *metrics.Metrics
 	meter, shutdownMetrics, err := metrics.InitProvider(ctx)
 	if err != nil {
@@ -56,7 +52,6 @@ func run(log *logger.Logger) error {
 		}
 	}
 
-	// Load feature config
 	configPath := getEnvOrDefault("CONFIG_PATH", "./data/user_config.toml")
 	featureCfg, err := service.LoadFeatureConfig(configPath)
 	if err != nil {
@@ -64,29 +59,24 @@ func run(log *logger.Logger) error {
 		return err
 	}
 
-	// Load infrastructure config
-	envPath := ".env"
-	infraCfg, err := config.LoadWithFile(envPath)
+	infraCfg, err := config.LoadWithFile(resolveEnvFile())
 	if err != nil {
-		log.Error("Failed to load infrastructure config", logger.Error(err), logger.F("path", envPath))
+		log.Error("Failed to load .env", logger.Error(err))
 		return err
 	}
 
-	// Calendar service
 	calendarSvc, err := service.NewCalendarService(ctx, featureCfg.Calendar)
 	if err != nil {
 		log.Error("Failed to initialize calendar service", logger.Error(err))
 		return err
 	}
 
-	// VMware service
 	vmwareSvc, err := service.NewVMwareService(ctx, infraCfg, log)
 	if err != nil {
 		log.Error("Failed to initialize VMware service", logger.Error(err))
 		return err
 	}
 
-	// Email service (optional)
 	var emailSvc service.EmailSender
 	smtpHost := getEnvOrDefault("SMTP_HOST", "smtp.gmail.com")
 	smtpPort := getEnvOrDefault("SMTP_PORT", "587")
@@ -98,7 +88,6 @@ func run(log *logger.Logger) error {
 			log.Warn("Failed to read SMTP password file", logger.Error(err), logger.F("file", smtpPasswordFile))
 		} else {
 			smtpPassword = strings.TrimSpace(string(passwordBytes))
-			log.Info("SMTP password loaded from file", logger.F("file", smtpPasswordFile))
 		}
 	}
 	smtpFrom := getEnvOrDefault("SMTP_FROM", smtpUsername)
@@ -119,23 +108,22 @@ func run(log *logger.Logger) error {
 		log.Info("Email service not configured (SMTP_USERNAME/SMTP_PASSWORD missing)")
 	}
 
-	// WireGuard service (optional)
 	var wireguardSvc service.WireGuardManager
 	if featureCfg.WireGuard.Enabled {
-		if apiKey := os.Getenv("OPNSENSE_API_KEY"); apiKey != "" {
-			featureCfg.WireGuard.OPNsenseAPIKey = apiKey
-		}
-		if apiSecret := os.Getenv("OPNSENSE_API_SECRET"); apiSecret != "" {
-			featureCfg.WireGuard.OPNsenseAPISecret = apiSecret
-		}
-		if v := os.Getenv("OPNSENSE_INSECURE"); v == "true" || v == "1" {
-			featureCfg.WireGuard.OPNsenseInsecure = true
-		}
+		featureCfg.WireGuard.OPNsenseAPIKey = os.Getenv("OPNSENSE_API_KEY")
+		featureCfg.WireGuard.OPNsenseAPISecret = os.Getenv("OPNSENSE_API_SECRET")
 
 		var opnsense service.OPNsenseAPI
 		if featureCfg.WireGuard.AutoRegisterPeers && featureCfg.WireGuard.OPNsenseURL != "" && featureCfg.WireGuard.OPNsenseAPIKey != "" {
-			opnsense = service.NewOPNsenseClient(featureCfg.WireGuard.OPNsenseURL, featureCfg.WireGuard.OPNsenseAPIKey, featureCfg.WireGuard.OPNsenseAPISecret, nil, featureCfg.WireGuard.OPNsenseInsecure)
+			opnsense = service.NewOPNsenseClient(
+				featureCfg.WireGuard.OPNsenseURL,
+				featureCfg.WireGuard.OPNsenseAPIKey,
+				featureCfg.WireGuard.OPNsenseAPISecret,
+				nil,
+				featureCfg.WireGuard.OPNsenseInsecure,
+			)
 		}
+
 		wgSvc := service.NewWireGuardService(&featureCfg.WireGuard, opnsense)
 		if err := wgSvc.ValidateConfig(); err != nil {
 			log.Warn("WireGuard service configuration invalid", logger.Error(err))
@@ -158,6 +146,18 @@ func run(log *logger.Logger) error {
 	}
 
 	return orch.Run()
+}
+
+func resolveEnvFile() string {
+	if path := os.Getenv("ENV_PATH"); path != "" {
+		return path
+	}
+	for _, path := range []string{".env", "../.env"} {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ".env"
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
