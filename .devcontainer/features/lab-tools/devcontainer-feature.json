@@ -1,7 +1,0 @@
-{
-    "id": "lab-tools",
-    "version": "1.0.0",
-    "name": "Lab Tools",
-    "description": "WireGuard CLI, govc (ESXi), and tflint for lab Terraform",
-    "options": {}
-}

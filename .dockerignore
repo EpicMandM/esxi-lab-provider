@@ -1,0 +1,16 @@
+.git
+.github
+**/.terraform
+*.tfstate
+*.tfstate.*
+.env
+secrets.env
+infra/terraform/lab-*.auto.tfvars
+infra/terraform/wireguard-config.auto.tfvars
+api/main
+esxi-lab-scheduler
+**/service-account.json
+.secrets
+.task
+/data
+api/data/user_config.toml
