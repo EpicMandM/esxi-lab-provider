@@ -50,7 +50,7 @@ jobs:
       - name: Install hadolint
         env:
           # renovate: datasource=github-releases depName=hadolint/hadolint
-          HADOLINT_VERSION: v2.13.1
+          HADOLINT_VERSION: v2.14.0
         run: |
           curl -fsSL "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" \
             -o /usr/local/bin/hadolint
