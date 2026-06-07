@@ -1,19 +1,3 @@
-variable "gcp_project" {
-  type = string
-}
-
-variable "lab_env_secret_id" {
-  type = string
-}
-
-variable "esxi_url" {
-  type = string
-}
-
-variable "esxi_admin_username" {
-  type = string
-}
-
 variable "user_count" {
   type    = number
   default = 4

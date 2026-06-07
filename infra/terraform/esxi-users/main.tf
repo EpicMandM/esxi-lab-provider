@@ -15,10 +15,15 @@ terraform {
       version = "~> 3.6"
     }
   }
+
+  backend "gcs" {
+    bucket = "exsi-chat-app-478319-terraform-state"
+    prefix = "esxi-users"
+  }
 }
 
 provider "google" {
-  project = var.gcp_project
+  project = data.terraform_remote_state.gcloud.outputs.gcp_project
 }
 
 locals {
