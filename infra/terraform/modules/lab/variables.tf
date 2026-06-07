@@ -2,10 +2,6 @@ variable "gcp_project" {
   type = string
 }
 
-variable "secret_id" {
-  type = string
-}
-
 variable "keys" {
   type = list(string)
 }
