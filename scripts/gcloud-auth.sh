@@ -13,11 +13,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-project="$(gcp_project || true)"
-if [[ -z "$project" ]]; then
-	echo "Set GCP_PROJECT or gcp_project in $(lab_config_file)" >&2
-	exit 1
-fi
+require_configured_gcp_project
+project="$(gcp_project)"
 
 if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" && -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]]; then
 	KEY_FILE="$GOOGLE_APPLICATION_CREDENTIALS"
