@@ -1,8 +1,7 @@
 module "lab" {
   source = "../modules/lab"
 
-  gcp_project = var.gcp_project
-  secret_id   = var.lab_env_secret_id
+  gcp_project = data.terraform_remote_state.gcloud.outputs.gcp_project
 
   keys = [
     "ESXI_PASSWORD",

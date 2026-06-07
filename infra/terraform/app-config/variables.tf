@@ -1,11 +1,3 @@
-variable "gcp_project" {
-  type = string
-}
-
-variable "lab_env_secret_id" {
-  type = string
-}
-
 variable "esxi_insecure" {
   type    = bool
   default = true
@@ -59,14 +51,4 @@ variable "smtp_host" {
 variable "smtp_port" {
   type    = string
   default = "587"
-}
-
-variable "smtp_username" {
-  type    = string
-  default = ""
-}
-
-variable "smtp_from" {
-  type    = string
-  default = ""
 }

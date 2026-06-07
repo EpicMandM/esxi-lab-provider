@@ -11,10 +11,15 @@ terraform {
       version = "0.19.0"
     }
   }
+
+  backend "gcs" {
+    bucket = "exsi-chat-app-478319-terraform-state"
+    prefix = "opnsense-wireguard"
+  }
 }
 
 provider "google" {
-  project = var.gcp_project
+  project = data.terraform_remote_state.gcloud.outputs.gcp_project
 }
 
 provider "opnsense" {

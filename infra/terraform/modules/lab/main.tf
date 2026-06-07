@@ -10,7 +10,7 @@ terraform {
 
 data "google_secret_manager_secret_version" "lab_env" {
   project = var.gcp_project
-  secret  = var.secret_id
+  secret  = "esxi-lab-env"
 }
 
 locals {
@@ -28,15 +28,17 @@ locals {
 
   secrets = { for key in var.keys : key => try(local.env[key], "") }
 
+  env_keys = nonsensitive(keys(local.env))
+
   missing_secrets = [
     for key in var.required_keys : key
-    if !contains(keys(local.env), key) || trimspace(try(local.env[key], "")) == ""
+    if !contains(local.env_keys, key) || trimspace(nonsensitive(try(local.env[key], ""))) == ""
   ]
 }
 
 check "required_secrets" {
   assert {
     condition     = length(local.missing_secrets) == 0
-    error_message = "Missing Secret Manager credentials: ${join(", ", local.missing_secrets)}. Fill secrets.env and run task secrets:push."
+    error_message = "Missing Secret Manager credentials: ${join(", ", nonsensitive(local.missing_secrets))}. Fill secrets.env and run task secrets:push."
   }
 }

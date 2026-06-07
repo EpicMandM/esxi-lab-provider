@@ -13,20 +13,14 @@ terraform {
 }
 
 provider "google" {
-  project = var.gcp_project
+  project = data.terraform_remote_state.gcloud.outputs.gcp_project
 }
 
 data "terraform_remote_state" "esxi_users" {
-  backend = "local"
+  backend = "gcs"
   config = {
-    path = "${path.module}/../esxi-users/terraform.tfstate"
-  }
-}
-
-data "terraform_remote_state" "wireguard" {
-  backend = "local"
-  config = {
-    path = "${path.module}/../opnsense-wireguard/terraform.tfstate"
+    bucket = local.terraform_state_bucket
+    prefix = "esxi-users"
   }
 }
 
@@ -38,6 +32,16 @@ locals {
 
   esxi_url_raw = data.terraform_remote_state.esxi_users.outputs.esxi_url
   esxi_url     = endswith(local.esxi_url_raw, "/sdk") ? local.esxi_url_raw : "${trimsuffix(local.esxi_url_raw, "/")}/sdk"
+
+  smtp_password = nonsensitive(lookup(module.lab.secrets, "SMTP_PASSWORD", ""))
+
+  lab = data.terraform_remote_state.lab.outputs
+  wg_client_addresses = [
+    local.lab.peer1_tunnel_address,
+    local.lab.peer2_tunnel_address,
+    local.lab.peer3_tunnel_address,
+    local.lab.peer4_tunnel_address,
+  ]
 }
 
 resource "local_file" "user_config" {
@@ -52,13 +56,13 @@ resource "local_file" "user_config" {
     esxi_user_vm_mappings = local.esxi_user_vm_mappings_normalized
     esxi_snapshot_name    = var.esxi_snapshot_name
 
-    wg_server_public_key     = data.terraform_remote_state.wireguard.outputs.server_public_key
-    wg_server_endpoint       = data.terraform_remote_state.wireguard.outputs.server_endpoint
-    wg_opnsense_url          = data.terraform_remote_state.wireguard.outputs.opnsense_url
+    wg_server_public_key     = local.lab.wireguard_server_public_key
+    wg_server_endpoint       = local.lab.wireguard_public_endpoint
+    wg_opnsense_url          = local.lab.opnsense_url
     wg_server_tunnel_network = var.wg_server_tunnel_network
     wg_allowed_ips           = var.wg_allowed_ips
     wg_mtu                   = var.wg_client_mtu
-    wg_client_addresses      = data.terraform_remote_state.wireguard.outputs.peer_tunnel_addresses
+    wg_client_addresses      = local.wg_client_addresses
     wg_keepalive             = var.wg_keepalive
     wg_opnsense_insecure     = var.wg_opnsense_insecure
   })
@@ -77,14 +81,14 @@ resource "local_file" "env" {
     opnsense_api_secret = module.lab.secrets["OPNSENSE_API_SECRET"]
     smtp_host           = var.smtp_host
     smtp_port           = var.smtp_port
-    smtp_username       = var.smtp_username
+    smtp_username       = data.terraform_remote_state.lab.outputs.smtp_username
     smtp_password       = lookup(module.lab.secrets, "SMTP_PASSWORD", "")
-    smtp_from           = var.smtp_from != "" ? var.smtp_from : var.smtp_username
+    smtp_from           = data.terraform_remote_state.lab.outputs.smtp_from != "" ? data.terraform_remote_state.lab.outputs.smtp_from : data.terraform_remote_state.lab.outputs.smtp_username
   })
 
   lifecycle {
     precondition {
-      condition     = var.smtp_username == "" || lookup(module.lab.secrets, "SMTP_PASSWORD", "") != ""
+      condition     = data.terraform_remote_state.lab.outputs.smtp_username == "" || trimspace(local.smtp_password) != ""
       error_message = "SMTP_USERNAME is set but SMTP_PASSWORD is missing from Secret Manager."
     }
   }

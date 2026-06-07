@@ -267,11 +267,9 @@ tasks:
     deps: [gcloud:auth]
     dir: infra/terraform/app-config
     cmds:
+      - task: infra:lab
       - tofu init -input=false
-      - |
-        tofu apply -auto-approve \
-          -var-file=../lab-common.auto.tfvars \
-          -var-file=../lab-smtp.auto.tfvars
+      - tofu apply -auto-approve
 
   secrets:push:
     desc: Upload secrets.env to Secret Manager (used by infra:apply)
@@ -280,20 +278,36 @@ tasks:
       - ./scripts/push-lab-env-secret.sh
 
   infra:init:
-    desc: Copy lab tfvars and secrets templates if missing
+    desc: Create local override files (apply uses remote config by default)
+    deps: [gcloud:auth]
     cmds:
       - |
         set -euo pipefail
-        TF=infra/terraform
-        for f in lab-common.auto.tfvars lab-esxi.auto.tfvars lab-network.auto.tfvars lab-smtp.auto.tfvars wireguard-config.auto.tfvars; do
-          if [ ! -f "$TF/$f" ]; then
-            cp "$TF/$f.example" "$TF/$f"
-            echo "Created $TF/$f — edit before task infra:apply"
+        ROOT="$PWD"
+        # shellcheck source=scripts/lib/lab-config.sh
+        source "$ROOT/scripts/lib/lab-config.sh"
+        override="$(lab_override_file)"
+        example="$ROOT/infra/terraform/lab/lab.auto.tfvars.example"
+        if [[ ! -f "$override" ]]; then
+          if lab_has_remote_state; then
+            lab_write_tfvars_from_remote "$override"
+            echo "Created infra/terraform/lab/lab.auto.tfvars from GCS remote state — edit to override"
+          else
+            cp "$example" "$override"
+            echo "Created infra/terraform/lab/lab.auto.tfvars from example — edit for first-time setup"
           fi
-        done
-        if [ ! -f secrets.env ]; then
-          cp secrets.env.example secrets.env
-          echo "Created secrets.env — fill credentials, then task infra:apply"
+        else
+          echo "infra/terraform/lab/lab.auto.tfvars already exists — leaving unchanged"
+        fi
+        if [[ ! -f secrets.env ]]; then
+          if "$ROOT/scripts/pull-lab-env-secret.sh"; then
+            :
+          else
+            cp secrets.env.example secrets.env
+            echo "Created secrets.env from example — fill credentials for first-time setup"
+          fi
+        else
+          echo "secrets.env already exists — leaving unchanged"
         fi
 
   infra:gcloud:
@@ -302,33 +316,105 @@ tasks:
     dir: infra/terraform/gcloud
     cmds:
       - tofu init -input=false
-      - tofu apply -auto-approve -var-file=../lab-common.auto.tfvars
+      - tofu apply -auto-approve
+
+  infra:lab:
+    desc: Store lab site settings in remote Terraform state
+    deps: [gcloud:auth]
+    dir: infra/terraform/lab
+    cmds:
+      - ../../../scripts/sync-lab-config.sh
+      - tofu init -input=false
+      - |
+        set -euo pipefail
+        if [[ -f lab.auto.tfvars ]]; then
+          tofu apply -auto-approve -var-file=lab.auto.tfvars
+        elif [[ -f lab.remote.auto.tfvars ]]; then
+          tofu apply -auto-approve -var-file=lab.remote.auto.tfvars
+        else
+          tofu apply -auto-approve
+        fi
 
   infra:esxi:
     desc: ESXi lab users and VM permissions
     deps: [gcloud:auth]
     dir: infra/terraform/esxi-users
     cmds:
+      - task: infra:lab
+      - |
+        set -euo pipefail
+        esxi_url="$(tofu -chdir=../lab output -raw esxi_url 2>/dev/null || true)"
+        case "$esxi_url" in
+        https://127.0.0.1:*|http://127.0.0.1:*)
+          task tunnel
+          ;;
+        esac
       - tofu init -input=false
-      - tofu apply -auto-approve \
-          -var-file=../lab-common.auto.tfvars \
-          -var-file=../lab-esxi.auto.tfvars
+      - |
+        set -euo pipefail
+        plan_file="$(mktemp)"
+        trap 'rm -f "$plan_file"' EXIT
+        set +e
+        tofu plan -input=false -no-color -detailed-exitcode >"$plan_file" 2>&1
+        plan_code=$?
+        set -e
+        if [ "$plan_code" -eq 0 ]; then
+          cat "$plan_file"
+          echo "ESXi users: no changes"
+          exit 0
+        fi
+        if [ "$plan_code" -ne 2 ]; then
+          cat "$plan_file"
+          exit "$plan_code"
+        fi
+        cat "$plan_file"
+        if grep -qE 'will be destroyed|null_resource\.esxi_role.*must be replaced' "$plan_file"; then
+          tofu apply -auto-approve
+          exit 0
+        fi
+        if grep -q 'null_resource.*will be created' "$plan_file"; then
+          chmod +x ../../../scripts/adopt-esxi-users-state.sh
+          ../../../scripts/adopt-esxi-users-state.sh
+          exit 0
+        fi
+        tofu apply -auto-approve
 
   infra:wireguard:
-    desc: WireGuard peers on OPNsense
+    desc: WireGuard peers on OPNsense (bootstrap only; skipped when not in state)
     deps: [gcloud:auth]
     dir: infra/terraform/opnsense-wireguard
     cmds:
+      - task: infra:lab
       - tofu init -input=false
-      - tofu apply -auto-approve \
-          -var-file=../lab-common.auto.tfvars \
-          -var-file=../lab-network.auto.tfvars \
-          -var-file=../wireguard-config.auto.tfvars
+      - |
+        set -euo pipefail
+        if tofu state list 2>/dev/null | grep -q '^opnsense_wireguard_'; then
+          tofu apply -auto-approve
+          exit 0
+        fi
+        plan_file="$(mktemp)"
+        trap 'rm -f "$plan_file"' EXIT
+        set +e
+        tofu plan -input=false -no-color -detailed-exitcode >"$plan_file" 2>&1
+        plan_code=$?
+        set -e
+        if [ "$plan_code" -eq 0 ]; then
+          cat "$plan_file"
+          echo "WireGuard: no changes"
+          exit 0
+        fi
+        if [ "$plan_code" -ne 2 ]; then
+          cat "$plan_file"
+          exit "$plan_code"
+        fi
+        cat "$plan_file"
+        echo "WireGuard not in Terraform state — using existing OPNsense config (remote lab state)."
+        echo "To bootstrap peers: cd infra/terraform/opnsense-wireguard && tofu apply"
 
   infra:apply:
-    desc: Full lab provisioning (gcloud → secrets → esxi → wireguard → app config)
+    desc: Full lab provisioning (remote config by default; use infra:init to override)
+    deps: [gcloud:auth]
     cmds:
-      - task: infra:init
       - task: infra:gcloud
       - task: secrets:push
       - task: infra:esxi

@@ -6,8 +6,8 @@ resource "google_project_service" "secretmanager_api" {
 }
 
 resource "google_secret_manager_secret" "esxi_lab_env" {
-  project   = var.gcp_project
-  secret_id = var.lab_env_secret_id
+  project   = local.gcp_project
+  secret_id = "esxi-lab-env"
 
   replication {
     auto {}

@@ -1,8 +1,7 @@
 module "lab" {
   source = "../modules/lab"
 
-  gcp_project = var.gcp_project
-  secret_id   = var.lab_env_secret_id
+  gcp_project = data.terraform_remote_state.gcloud.outputs.gcp_project
 
   keys = ["ESXI_PASSWORD"]
   required_keys = [
@@ -11,7 +10,7 @@ module "lab" {
 }
 
 locals {
-  esxi_url            = var.esxi_url
-  esxi_admin_username = var.esxi_admin_username
+  esxi_url            = data.terraform_remote_state.lab.outputs.esxi_url
+  esxi_admin_username = data.terraform_remote_state.lab.outputs.esxi_admin_username
   esxi_admin_password = module.lab.secrets["ESXI_PASSWORD"]
 }

@@ -12,20 +12,29 @@ Prebuilt dev container image (linux/amd64): `ghcr.io/epicmandm/esxi-lab-provider
 
 ## Setup
 
+**Re-clone / existing lab** — one command:
+
 ```bash
-task infra:init
+task infra:apply
 ```
 
-Edit the files `infra:init` creates:
+Pulls site settings from GCS remote state, credentials from Secret Manager, and generates `.env` + `api/data/user_config.toml`. WireGuard server public key is derived automatically.
 
-| File | What to set |
-|------|-------------|
-| `infra/terraform/lab-common.auto.tfvars` | GCP project, Secret Manager secret id |
-| `infra/terraform/lab-esxi.auto.tfvars` | ESXi URL and admin username |
-| `infra/terraform/lab-network.auto.tfvars` | OPNsense URL |
-| `infra/terraform/lab-smtp.auto.tfvars` | SMTP username/from (if using email) |
-| `infra/terraform/wireguard-config.auto.tfvars` | WireGuard server keys, endpoint, peer IPs |
-| `secrets.env` | ESXi password, OPNsense API keys, WG private key, SMTP password |
+**Local overrides** (different URLs, rotated secrets, first-time bootstrap):
+
+```bash
+task infra:init   # creates lab.auto.tfvars + secrets.env from remote (or examples)
+# edit the files, then:
+task infra:apply
+```
+
+| Source | What it holds |
+|--------|----------------|
+| GCS `lab` state | ESXi/OPNsense URLs, WireGuard topology |
+| Secret Manager `esxi-lab-env` | Passwords and API keys |
+| `lab.auto.tfvars` (optional) | Local override of site settings |
+| `secrets.env` (optional) | Local override of credentials |
+| Generated | `.env`, `user_config.toml`, `service-account.json` |
 
 ### Provision
 
@@ -35,6 +44,8 @@ task infra:apply
 
 Prompts for GCP login on first run if needed. Then it creates GCP resources, uploads `secrets.env` to Secret Manager, provisions ESXi/WireGuard, and generates `.env` + `api/data/user_config.toml`.
 
+For the devcontainer, set `esxi_url = "https://127.0.0.1:10443"` in `lab.auto.tfvars` (the example default). `infra:esxi` starts the WireGuard tunnel automatically when that URL is used.
+
 ### CI
 
 Set these instead of interactive login:
@@ -42,7 +53,6 @@ Set these instead of interactive login:
 | Variable | Purpose |
 |----------|---------|
 | `GCP_PROJECT` | GCP project (overrides `lab-common.auto.tfvars`) |
-| `LAB_ENV_SECRET_ID` | Secret Manager secret id (optional override) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON key |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | Service account JSON inline (alternative to file path) |
 | `ESXI_PASSWORD`, `OPNSENSE_API_KEY`, … | Upload secrets without `secrets.env` |
@@ -82,8 +92,8 @@ Override deploy target: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`.
 
 | What | Where |
 |------|-------|
-| Lab URLs, WireGuard topology | `lab-*.auto.tfvars`, `wireguard-config.auto.tfvars` |
-| Passwords and API keys | `secrets.env` → Secret Manager |
+| Lab URLs, WireGuard topology | GCS remote state (override: `lab.auto.tfvars`) |
+| Passwords and API keys | Secret Manager (override: `secrets.env`) |
 | App runtime files | Generated `.env`, `user_config.toml` |
 
 ## Tasks
