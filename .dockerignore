@@ -5,8 +5,7 @@
 *.tfstate.*
 .env
 secrets.env
-infra/terraform/lab-*.auto.tfvars
-infra/terraform/wireguard-config.auto.tfvars
+infra/terraform/lab/lab.auto.tfvars
 api/main
 esxi-lab-scheduler
 **/service-account.json
