@@ -18,8 +18,12 @@ terraform {
   }
 }
 
+locals {
+  gcp_project = "exsi-chat-app-478319"
+}
+
 provider "google" {
-  project = var.gcp_project
+  project = local.gcp_project
   region  = var.gcp_region
 }
 
@@ -69,7 +73,7 @@ resource "google_project_service" "storage_api" {
 resource "google_storage_bucket" "terraform_state" {
   name     = var.terraform_state_bucket
   location = var.gcp_region
-  project  = var.gcp_project
+  project  = local.gcp_project
 
   uniform_bucket_level_access = true
 
@@ -96,7 +100,7 @@ resource "google_service_account" "calendar_sa" {
 
 # Grant metricWriter so the binary can push custom metrics directly
 resource "google_project_iam_member" "calendar_sa_metric_writer" {
-  project = var.gcp_project
+  project = local.gcp_project
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${google_service_account.calendar_sa.email}"
 
