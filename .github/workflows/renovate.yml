@@ -16,6 +16,10 @@ on:
           - info
           - warn
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   renovate:
     name: Run Renovate

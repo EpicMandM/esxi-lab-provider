@@ -6,6 +6,9 @@ on:
     - cron: '0 6 1,15 * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   should-build:
     name: Check whether to build
