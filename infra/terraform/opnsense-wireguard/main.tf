@@ -8,7 +8,7 @@ terraform {
     }
     opnsense = {
       source  = "browningluke/opnsense"
-      version = "0.23.2"
+      version = "0.24.0"
     }
   }
 
