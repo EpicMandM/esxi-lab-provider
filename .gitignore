@@ -22,6 +22,7 @@ go.work
 # Environment with secrets
 .env
 secrets.env
+wg0.conf
 infra/terraform/lab/lab.auto.tfvars
 infra/terraform/lab/lab.remote.auto.tfvars
 # Compiled Go binary

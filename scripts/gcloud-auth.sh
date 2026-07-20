@@ -39,16 +39,19 @@ if ci_mode; then
 	exit 1
 fi
 
-if ! gcloud auth print-access-token >/dev/null 2>&1; then
-	echo "GCP user login required..."
-	gcloud auth login
-fi
+have_user=false
+have_adc=false
+gcloud auth print-access-token >/dev/null 2>&1 && have_user=true
+gcloud auth application-default print-access-token >/dev/null 2>&1 && have_adc=true
 
-gcloud config set project "$project"
-
-if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+if ! $have_user; then
+	echo "GCP login required..."
+	gcloud auth login --update-adc
+elif ! $have_adc; then
 	echo "Application Default Credentials required for Terraform..."
 	gcloud auth application-default login
 fi
+
+gcloud config set project "$project"
 
 echo "GCP auth OK (project: $project)"

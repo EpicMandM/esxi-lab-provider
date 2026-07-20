@@ -32,6 +32,7 @@ task infra:apply
 |--------|----------------|
 | GCS `lab` state | ESXi/OPNsense URLs, WireGuard topology |
 | Secret Manager `esxi-lab-env` | Passwords and API keys |
+| Secret Manager `esxi-lab-wg0` | Operator WireGuard client config (`wg0.conf`) |
 | `lab.auto.tfvars` (optional) | Local override of site settings |
 | `secrets.env` (optional) | Local override of credentials |
 | Generated | `.env`, `user_config.toml`, `service-account.json` |
@@ -42,7 +43,9 @@ task infra:apply
 task infra:apply
 ```
 
-Prompts for GCP login on first run if needed. Then it creates GCP resources, uploads `secrets.env` to Secret Manager, provisions ESXi/WireGuard, and generates `.env` + `api/data/user_config.toml`.
+Prompts for GCP login on first run if needed. Then it creates GCP resources, uploads `secrets.env` + operator `wg0.conf` to Secret Manager, brings up WireGuard, provisions ESXi/WireGuard peers, and generates `.env` + `api/data/user_config.toml`.
+
+First-time WireGuard: place your operator client config at `/etc/wireguard/wg0.conf` (or `wg0.conf` in the repo root) before `infra:apply` so `secrets:push` can upload it. Later clones pull it via `wg:apply`.
 
 For the devcontainer, set `esxi_url = "https://127.0.0.1:10443"` in `lab.auto.tfvars` (the example default). `infra:esxi` starts the WireGuard tunnel automatically when that URL is used.
 
@@ -86,6 +89,8 @@ task logs
 task test-run
 ```
 
+Deploy and other remote tasks auto-apply WireGuard from Secret Manager and set up SSH/sudo if needed (password prompt on first SSH authorize / sudoers).
+
 Override deploy target: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`.
 
 ## Configuration model
@@ -93,7 +98,8 @@ Override deploy target: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`.
 | What | Where |
 |------|-------|
 | Lab URLs, WireGuard topology | GCS remote state (override: `lab.auto.tfvars`) |
-| Passwords and API keys | Secret Manager (override: `secrets.env`) |
+| Passwords and API keys | Secret Manager `esxi-lab-env` (override: `secrets.env`) |
+| Operator WireGuard client | Secret Manager `esxi-lab-wg0` |
 | App runtime files | Generated `.env`, `user_config.toml` |
 
 ## Tasks

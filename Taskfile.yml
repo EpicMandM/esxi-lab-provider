@@ -33,24 +33,15 @@ tasks:
 
   ssh-keygen:
     desc: Generate SSH key and upload to remote server for passwordless access
-    cmds:
-      - |
-        if [ ! -f {{.SSH_KEY}} ]; then
-          echo "Generating new SSH key..."
-          ssh-keygen -t rsa -b 4096 -f {{.SSH_KEY}} -N "" -C "esxi-lab-deployment"
-        else
-          echo "SSH key already exists at {{.SSH_KEY}}"
-        fi
-      - ssh-copy-id -i {{.SSH_KEY}}.pub -p {{.PORT}} {{.USER}}@{{.HOST}}
+    deps: [_ensure_ssh]
 
   setup-sudo:
     desc: Configure passwordless sudo for deployment user
-    cmds:
-      - |
-        {{.SSH}} -t "echo '{{.USER}} ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/{{.USER}} > /dev/null && sudo chmod 0440 /etc/sudoers.d/{{.USER}}"
+    deps: [_ensure_sudo]
 
   setup-logging:
     desc: Configure journald to retain logs for 7 days
+    deps: [_ensure_remote]
     cmds:
       - |
         {{.SSH}} "sudo mkdir -p /etc/systemd/journald.conf.d && sudo tee /etc/systemd/journald.conf.d/retention.conf > /dev/null <<EOF
@@ -73,8 +64,31 @@ tasks:
     cmds:
       - task: _deploy
 
+  _wg:apply:
+    internal: true
+    deps: [gcloud:auth]
+    cmds:
+      - ./scripts/apply-wg0.sh
+
+  _ensure_ssh:
+    internal: true
+    deps: [_wg:apply]
+    cmds:
+      - SSH_KEY={{.SSH_KEY}} DEPLOY_USER={{.USER}} DEPLOY_HOST={{.HOST}} DEPLOY_PORT={{.PORT}} ./scripts/ensure-ssh.sh
+
+  _ensure_sudo:
+    internal: true
+    deps: [_ensure_ssh]
+    cmds:
+      - SSH_KEY={{.SSH_KEY}} DEPLOY_USER={{.USER}} DEPLOY_HOST={{.HOST}} DEPLOY_PORT={{.PORT}} ./scripts/ensure-sudo.sh
+
+  _ensure_remote:
+    internal: true
+    deps: [_ensure_sudo]
+
   _deploy:
     internal: true
+    deps: [_ensure_remote]
     desc: Copy binary and config files to remote server and install systemd units
     cmds:
       - echo "Deploying to {{.USER}}@{{.HOST}}:{{.PORT}}"
@@ -124,12 +138,14 @@ tasks:
 
   status:
     desc: Check scheduler status on remote server
+    deps: [_ensure_remote]
     cmds:
       - '{{.SSH}} "sudo systemctl status {{.SERVICE_NAME}}.timer"'
       - '{{.SSH}} "sudo systemctl list-timers {{.SERVICE_NAME}}.timer"'
 
   logs:
     desc: View scheduler logs on remote server
+    deps: [_ensure_remote]
     vars:
       LINES: '{{.LINES | default "100"}}'
     cmds:
@@ -137,12 +153,14 @@ tasks:
 
   stop:
     desc: Stop and disable scheduler on remote server
+    deps: [_ensure_remote]
     cmds:
       - '{{.SSH}} "sudo systemctl stop {{.SERVICE_NAME}}.timer"'
       - '{{.SSH}} "sudo systemctl disable {{.SERVICE_NAME}}.timer"'
 
   clean:
     desc: Remove deployment files from remote server
+    deps: [_ensure_remote]
     cmds:
       - '{{.SSH}} "sudo systemctl stop {{.SERVICE_NAME}}.timer"'
       - '{{.SSH}} "sudo systemctl disable {{.SERVICE_NAME}}.timer"'
@@ -153,6 +171,7 @@ tasks:
 
   test-run:
     desc: Trigger a single scheduler run on remote server
+    deps: [_ensure_remote]
     cmds:
       - '{{.SSH}} "sudo systemctl start {{.SERVICE_NAME}}.service"'
       - '{{.SSH}} "sudo journalctl -u {{.SERVICE_NAME}}.service -n 100"'
@@ -259,6 +278,7 @@ tasks:
 
   gcloud:auth:
     desc: GCP auth — interactive locally, service account via env in CI
+    run: once
     cmds:
       - ./scripts/gcloud-auth.sh
 
@@ -268,14 +288,21 @@ tasks:
     dir: infra/terraform/app-config
     cmds:
       - task: infra:lab
-      - tofu init -input=false
+      - tofu init -input=false -upgrade
       - tofu apply -auto-approve
 
   secrets:push:
-    desc: Upload secrets.env to Secret Manager (used by infra:apply)
+    desc: Upload secrets.env and wg0.conf to Secret Manager (used by infra:apply)
     deps: [gcloud:auth]
     cmds:
       - ./scripts/push-lab-env-secret.sh
+      - ./scripts/push-wg0-secret.sh
+
+  wg:apply:
+    desc: Install operator WireGuard config from Secret Manager and bring up wg0
+    deps: [gcloud:auth]
+    cmds:
+      - ./scripts/apply-wg0.sh
 
   infra:init:
     desc: Create local override files (apply uses remote config by default)
@@ -315,7 +342,7 @@ tasks:
     deps: [gcloud:auth]
     dir: infra/terraform/gcloud
     cmds:
-      - tofu init -input=false
+      - tofu init -input=false -upgrade
       - tofu apply -auto-approve
 
   infra:lab:
@@ -324,7 +351,7 @@ tasks:
     dir: infra/terraform/lab
     cmds:
       - ../../../scripts/sync-lab-config.sh
-      - tofu init -input=false
+      - tofu init -input=false -upgrade
       - |
         set -euo pipefail
         if [[ -f lab.auto.tfvars ]]; then
@@ -349,7 +376,7 @@ tasks:
           task tunnel
           ;;
         esac
-      - tofu init -input=false
+      - tofu init -input=false -upgrade
       - |
         set -euo pipefail
         plan_file="$(mktemp)"
@@ -385,7 +412,7 @@ tasks:
     dir: infra/terraform/opnsense-wireguard
     cmds:
       - task: infra:lab
-      - tofu init -input=false
+      - tofu init -input=false -upgrade
       - |
         set -euo pipefail
         if tofu state list 2>/dev/null | grep -q '^opnsense_wireguard_'; then
@@ -417,6 +444,7 @@ tasks:
     cmds:
       - task: infra:gcloud
       - task: secrets:push
+      - task: wg:apply
       - task: infra:esxi
       - task: infra:wireguard
       - task: config:generate

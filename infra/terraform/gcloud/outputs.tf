@@ -18,3 +18,11 @@ output "gcp_project" {
   description = "GCP project ID"
   value       = local.gcp_project
 }
+
+output "lab_env_secret_id" {
+  value = google_secret_manager_secret.esxi_lab_env.secret_id
+}
+
+output "wg0_secret_id" {
+  value = google_secret_manager_secret.esxi_lab_wg0.secret_id
+}

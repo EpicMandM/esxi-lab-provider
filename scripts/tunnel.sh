@@ -14,9 +14,13 @@ ensure_wg() {
 	if ip link show wg0 &>/dev/null; then
 		return 0
 	fi
+	ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+	if [[ -x "$ROOT/scripts/apply-wg0.sh" ]] && WG_CONF="$WG_CONF" "$ROOT/scripts/apply-wg0.sh"; then
+		return 0
+	fi
 	if [[ ! -f "$WG_CONF" ]]; then
 		echo "WireGuard config not found: $WG_CONF" >&2
-		echo "Copy your lab .conf to /etc/wireguard/wg0.conf in the devcontainer." >&2
+		echo "Run task secrets:push then task wg:apply, or copy your lab .conf to $WG_CONF." >&2
 		exit 1
 	fi
 	echo "Bringing up wg0 from $WG_CONF ..."
