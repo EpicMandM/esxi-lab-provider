@@ -19,8 +19,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.60
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.60.0/go.mod h1:evkqaSczW9g2BQm1veCtgNhJ4wCCsRrOsSgNIn9LHQk=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.60.0 h1:Fx8NtDCmKH4ML2hUkPz4Dq250903vRDojMjVCDKwQuc=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.60.0/go.mod h1:V9g30lTKzfUsEW+gpWssck6u9IhARajmipodImLLcwI=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 h1:aPMa5qZU9dp4fU34o+jQgVIPFIOi20oxYg8TLigmZLg=
-github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0/go.mod h1:sg6Wqbl0BKKZ5zKnQj2q0qic/3ziF894SCx1LpbX37Y=
+github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.60.0 h1:Oblia1QXBJlM/wOY9ARRUtsXdDYiMCzk3eCMikqoLbI=
+github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.60.0/go.mod h1:SRAbhyZ4R4FagHMM9VtRgSY/lheRoht2fKelZXQUenk=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
