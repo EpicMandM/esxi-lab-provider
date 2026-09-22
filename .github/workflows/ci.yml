@@ -47,7 +47,10 @@ jobs:
           # renovate: datasource=github-releases depName=terraform-linters/tflint
           TFLINT_VERSION: v0.64.0
         run: |
-          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+          curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/${TFLINT_VERSION}/tflint_linux_amd64.zip" \
+            -o /tmp/tflint.zip
+          sudo unzip -o -q /tmp/tflint.zip -d /usr/local/bin
+          sudo chmod +x /usr/local/bin/tflint
           tflint --init
 
       - name: Install hadolint
