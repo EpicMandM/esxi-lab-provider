@@ -40,7 +40,7 @@ jobs:
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2
         with:
           # renovate: datasource=github-releases depName=opentofu/opentofu
-          tofu_version: v1.13.8
+          tofu_version: v1.13.9
 
       - name: Install tflint
         env:
@@ -139,7 +139,7 @@ jobs:
         run: go build -trimpath -ldflags="-s -w -X main.version=${{ steps.tag.outputs.new_tag }}" -o esxi-lab-scheduler ./cmd/server/main.go
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           tag_name: ${{ steps.tag.outputs.new_tag }}
           name: ${{ steps.tag.outputs.new_tag }}
