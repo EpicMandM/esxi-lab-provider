@@ -263,6 +263,7 @@ pids
 *.tfstate.*
 
 .terraform.lock.hcl
+infra/terraform/gcloud/.cost_guard.zip
 
 # Crash log files
 crash.log

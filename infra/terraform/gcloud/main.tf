@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.5"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7"
+    }
   }
 
   backend "gcs" {
@@ -79,6 +83,27 @@ resource "google_storage_bucket" "terraform_state" {
 
   versioning {
     enabled = true
+  }
+
+  # Cap version accumulation so state history cannot drift into paid storage.
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 5
+      with_state         = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 30
+      with_state                 = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
   }
 
   lifecycle {

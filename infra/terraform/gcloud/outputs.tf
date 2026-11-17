@@ -26,3 +26,13 @@ output "lab_env_secret_id" {
 output "wg0_secret_id" {
   value = google_secret_manager_secret.esxi_lab_wg0.secret_id
 }
+
+output "cost_guard_function_uri" {
+  description = "HTTP URI of the scheduled free-tier cost guard function"
+  value       = google_cloudfunctions2_function.cost_guard.service_config[0].uri
+}
+
+output "cost_guard_scheduler_job" {
+  description = "Cloud Scheduler job name for the cost guard"
+  value       = google_cloud_scheduler_job.cost_guard.name
+}

@@ -4,10 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/gcp-config.sh
 source "$ROOT/scripts/lib/gcp-config.sh"
+# shellcheck source=lib/secret-prune.sh
+source "$ROOT/scripts/lib/secret-prune.sh"
 
 ENV_FILE="${ENV_FILE:-$ROOT/secrets.env}"
 PROJECT="$(gcp_project || true)"
 SECRET_ID="esxi-lab-env"
+KEEP_SECRET_VERSIONS="${KEEP_SECRET_VERSIONS:-1}"
 
 if [[ -z "$PROJECT" ]]; then
 	echo "Set GCP_PROJECT or run task infra:gcloud (tofu output gcp_project)" >&2
@@ -126,6 +129,7 @@ done
 if [[ "$local_changed" -eq 0 ]] && ! has_local_credentials; then
 	if remote_has_credentials; then
 		echo "No credentials in $ENV_FILE or env — using existing Secret Manager version (projects/$PROJECT/secrets/$SECRET_ID)"
+		prune_secret_versions "$SECRET_ID" "$KEEP_SECRET_VERSIONS"
 		exit 0
 	fi
 	echo "No credentials in $ENV_FILE or env (need: ${SECRET_KEYS[*]})" >&2
@@ -147,6 +151,7 @@ LATEST_KEYS="$(gcloud secrets versions access latest \
 NEW_KEYS="$(grep -E '^[A-Z_]+=' "$TMP" | sort || true)"
 if [[ "$NEW_KEYS" == "$LATEST_KEYS" ]]; then
 	echo "Secret Manager already up to date (projects/$PROJECT/secrets/$SECRET_ID)"
+	prune_secret_versions "$SECRET_ID" "$KEEP_SECRET_VERSIONS"
 	exit 0
 fi
 
@@ -155,3 +160,4 @@ gcloud secrets versions add "$SECRET_ID" \
 	--data-file="$TMP"
 
 echo "Uploaded to projects/$PROJECT/secrets/$SECRET_ID"
+prune_secret_versions "$SECRET_ID" "$KEEP_SECRET_VERSIONS"
