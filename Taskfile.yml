@@ -109,6 +109,7 @@ tasks:
         WorkingDirectory={{.REMOTE_PATH}}
         Environment=CONFIG_PATH={{.REMOTE_PATH}}/user_config.toml
         Environment=SERVICE_ACCOUNT_PATH={{.REMOTE_PATH}}/service-account.json
+        Environment=GOOGLE_CLOUD_PROJECT={{.GCP_PROJECT | default "exsi-chat-app-478319"}}
         EnvironmentFile={{.REMOTE_PATH}}/.env
         ExecStart={{.REMOTE_PATH}}/{{.BINARY_NAME}}
         StandardOutput=journal

@@ -11,11 +11,15 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
 
 	gcpexporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 const instrumentationName = "github.com/EpicMandM/esxi-lab-provider"
@@ -64,7 +68,7 @@ func New(meter metric.Meter) (*Metrics, error) {
 
 	if m.VMRestoreDuration, err = meter.Float64Histogram(
 		"lab.vm.restore.duration",
-		metric.WithDescription("Time taken to restore a single VM snapshot in seconds"),
+		metric.WithDescription("Wall-clock duration of the VM restore + password-rotation batch in seconds"),
 		metric.WithUnit("s"),
 	); err != nil {
 		return nil, fmt.Errorf("lab.vm.restore.duration: %w", err)
@@ -137,18 +141,39 @@ func New(meter metric.Meter) (*Metrics, error) {
 // function (with a deadline context) before the process exits to flush
 // all metrics.
 //
-// The GCP project and credentials are resolved automatically from
-// Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS env var
-// or the service account key deployed alongside the binary).
+// Metric types are exported as workload.googleapis.com/<name> (OTel GCP
+// exporter default). Credentials come from Application Default Credentials
+// (GOOGLE_APPLICATION_CREDENTIALS / SERVICE_ACCOUNT_PATH). Optional
+// GOOGLE_CLOUD_PROJECT / GCP_PROJECT pins the destination project.
 func InitProvider(ctx context.Context) (meter metric.Meter, shutdown func(context.Context) error, err error) {
-	exporter, err := gcpexporter.New()
+	var exporterOpts []gcpexporter.Option
+	if project := firstNonEmpty(os.Getenv("GOOGLE_CLOUD_PROJECT"), os.Getenv("GCP_PROJECT")); project != "" {
+		exporterOpts = append(exporterOpts, gcpexporter.WithProjectID(project), gcpexporter.WithDestinationProjectQuota())
+	}
+
+	exporter, err := gcpexporter.New(exporterOpts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create googlecloud exporter: %w", err)
 	}
 
+	res, err := resource.New(ctx,
+		resource.WithFromEnv(),
+		resource.WithTelemetrySDK(),
+		resource.WithAttributes(
+			semconv.ServiceName("esxi-lab-scheduler"),
+			semconv.ServiceNamespace("esxi-lab"),
+		),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create resource: %w", err)
+	}
+
+	// Short export interval so a oneshot cron still has a chance to flush
+	// before Shutdown; Shutdown always force-flushes remaining points.
 	provider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(
-			sdkmetric.NewPeriodicReader(exporter),
+			sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(5*time.Second)),
 		),
 	)
 
@@ -157,6 +182,15 @@ func InitProvider(ctx context.Context) (meter metric.Meter, shutdown func(contex
 	meter = provider.Meter(instrumentationName)
 
 	return meter, provider.Shutdown, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // Noop returns a no-op meter. Use in tests or when metrics are disabled.

@@ -36,3 +36,8 @@ output "cost_guard_scheduler_job" {
   description = "Cloud Scheduler job name for the cost guard"
   value       = google_cloud_scheduler_job.cost_guard.name
 }
+
+output "lab_metrics_dashboard" {
+  description = "Cloud Monitoring dashboard for workload.googleapis.com/lab.* metrics"
+  value       = google_monitoring_dashboard.lab_metrics.id
+}

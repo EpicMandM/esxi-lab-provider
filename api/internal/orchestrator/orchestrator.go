@@ -54,6 +54,7 @@ func (o *Orchestrator) Run() error {
 
 	activeEvents, err := o.FetchActiveEvents()
 	if err != nil {
+		o.recordRunOutcome(ctx_background(), time.Since(runStart), "failure")
 		return err
 	}
 
@@ -295,10 +296,13 @@ func (o *Orchestrator) RestoreVMs(pairs []service.UserVMPair, activeEvents []Eve
 		logger.F("VMS_TO_RESTORE", len(vmsToRestore)),
 		logger.Snapshot(snapshotName))
 
+	restoreStart := time.Now()
 	restoreErrors, passwords := o.VMware.RestoreVMsWithPasswordRotation(context.Background(), vmsToRestore, usersForRestore, snapshotName)
+	restoreDur := time.Since(restoreStart)
 
 	// Record VM restore outcomes (success = total - failures, failure = len(restoreErrors))
 	if o.Metrics != nil {
+		o.Metrics.VMRestoreDuration.Record(context.Background(), restoreDur.Seconds())
 		successCount := int64(len(vmsToRestore) - len(restoreErrors))
 		failCount := int64(len(restoreErrors))
 		if successCount > 0 {

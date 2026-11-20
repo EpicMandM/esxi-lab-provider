@@ -264,6 +264,8 @@ pids
 
 .terraform.lock.hcl
 infra/terraform/gcloud/.cost_guard.zip
+.metrics-audit/
+.metrics-audit-summary.txt
 
 # Crash log files
 crash.log
